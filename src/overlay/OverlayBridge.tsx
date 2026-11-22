@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 
-import { SUPPORTED_LANGUAGES } from "@/i18n";
+import { changeLanguagePreference } from "@/i18n";
+import { SUPPORTED_LANGUAGES, SYSTEM_LANGUAGE, getLanguagePreference } from "@/language";
 import { useMeterSettingsStore } from "@/stores/useMeterSettingsStore";
 import {
   EncounterState,
@@ -50,6 +51,11 @@ const notifyOverlay = (text: string, level: OverlayNotice["level"]) => {
  */
 export const OverlayBridge = () => {
   const { t, i18n } = useTranslation();
+  // The saved choice ("system" or a language code). Kept in state because switching between
+  // "system" and the language it resolves to does not change i18n.language.
+  const [languagePreference, setLanguagePreference] = useState(getLanguagePreference);
+  const languagePreferenceRef = useRef(languagePreference);
+  languagePreferenceRef.current = languagePreference;
   const [encounterState, setEncounterState] = useState<EncounterState>(DEFAULT_ENCOUNTER_STATE);
   const [partyData, setPartyData] = useState<Array<PlayerData | null>>(EMPTY_PARTY);
   const [lastPartyData, setLastPartyData] = useState<Array<PlayerData | null>>(EMPTY_PARTY);
@@ -84,11 +90,12 @@ export const OverlayBridge = () => {
   current.current = { encounterState, partyData: visiblePartyData };
 
   useEffect(() => {
-    const overlaySettings = buildOverlaySettings(settings, i18n.language, LANGUAGES, (key) => t(key));
+    const languages = [{ value: SYSTEM_LANGUAGE, label: t("ui.language-system") }, ...LANGUAGES];
+    const overlaySettings = buildOverlaySettings(settings, languagePreference, languages, (key) => t(key));
     const state = buildOverlayState(encounterState, visiblePartyData, overlaySettings);
     // Without an injected hook the app keeps the latest snapshot for later.
     invoke("push_overlay_state", { state }).catch(() => {});
-  }, [encounterState, visiblePartyData, settings, t, i18n.language]);
+  }, [encounterState, visiblePartyData, settings, t, i18n.language, languagePreference]);
 
   useEffect(() => {
     const listeners = [
@@ -102,8 +109,12 @@ export const OverlayBridge = () => {
       listen("overlay-settings-change", (event: { payload: OverlaySettingsValues }) => {
         const values = event.payload;
         useMeterSettingsStore.getState().set(meterSettingsFromOverlay(values));
-        if (values.language in SUPPORTED_LANGUAGES && values.language !== i18n.language) {
-          i18n.changeLanguage(values.language);
+        const preference = values.language;
+        const valid = preference === SYSTEM_LANGUAGE || preference in SUPPORTED_LANGUAGES;
+        if (valid && preference !== languagePreferenceRef.current) {
+          languagePreferenceRef.current = preference;
+          setLanguagePreference(preference);
+          changeLanguagePreference(preference);
         }
       }),
       listen("encounter-saved", () => notifyOverlay(t("ui.successful-save"), "Success")),

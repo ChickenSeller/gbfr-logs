@@ -6,26 +6,28 @@ import { initReactI18next } from "react-i18next";
 import { readTextFile } from "@tauri-apps/api/fs";
 import { resolveResource } from "@tauri-apps/api/path";
 
+import { getLanguagePreference, resolveLanguage, saveLanguagePreference } from "./language";
+
 const loadLanguageFromPath = async (language: string, namespace: string) => {
   const resourcePath = await resolveResource(`lang/${language}/${namespace}.json`);
   return JSON.parse(await readTextFile(resourcePath));
 };
 
-export const SUPPORTED_LANGUAGES: { [key: string]: string } = {
-  en: "English",
-  "zh-CN": "简体中文",
-  "zh-TW": "繁體中文",
-  "ko-KR": "한국어",
-  jp: "日本語",
-  "fr-FR": "Français",
-  bp: "Brazillian Portuguese",
-  ge: "Deutsch",
-  "es-ES": "Español",
-  "it-IT": "Italiano",
+/** Picks the saved choice, or the system language when there is none. */
+const detector = new LanguageDetector();
+detector.addDetector({
+  name: "preference",
+  lookup: () => resolveLanguage(getLanguagePreference()),
+});
+
+/** Changes the language and remembers the choice (`SYSTEM_LANGUAGE` follows the system). */
+export const changeLanguagePreference = (preference: string) => {
+  saveLanguagePreference(preference);
+  return i18n.changeLanguage(resolveLanguage(preference));
 };
 
 i18n
-  .use(LanguageDetector)
+  .use(detector)
   .use(initReactI18next)
   .use(
     resourcesToBackend((language, namespace, callback) => {
@@ -37,6 +39,8 @@ i18n
   .init({
     ns: ["ui", "characters", "items", "overmasteries", "sigils", "traits", "weapons", "quests", "enemies"],
     defaultNS: "ui",
+    // Only explicit choices are stored (see ./language), so nothing is cached here.
+    detection: { order: ["preference"], caches: [] },
     fallbackLng: {
       default: ["en"],
       "zh-TW": ["zh-CN", "en"],
