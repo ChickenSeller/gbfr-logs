@@ -14,8 +14,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hudhook::imgui::{Condition, DrawListMut, ImColor32, MouseButton, Ui, WindowFlags};
 use protocol::{
-    Message, OverlayColumn, OverlayCopyKind, OverlayCopyRequest, OverlayNoticeLevel, OverlayPlayer,
-    OverlaySettingsValues, OverlaySkill, OverlayState, OverlayStatus,
+    Message, OverlayAttackType, OverlayColumn, OverlayCopyKind, OverlayCopyRequest,
+    OverlayNoticeLevel, OverlayPlayer, OverlaySettingsValues, OverlaySkill, OverlayState,
+    OverlayStatus,
 };
 
 use super::config::MeterConfig;
@@ -378,6 +379,7 @@ impl MeterWindow {
         for (player, cells) in players.iter().zip(&values) {
             self.draw_player(frame, player, cells, &right_edges, name_right, top_damage);
             if self.expanded_players.contains(&player.index) {
+                draw_attack_composition(frame, player, &view.state.attack_types);
                 self.draw_skills(frame, player, show_full);
             }
         }
@@ -680,6 +682,70 @@ fn skill_cells(skill: &OverlaySkill, show_full: bool) -> [String; 6] {
         format_amount(average, show_full),
         format!("{:.0}%", skill.percentage),
     ]
+}
+
+/// Under an expanded player: a stacked bar of the damage per attack type, then a legend with
+/// each type's share, wrapped to the meter width.
+fn draw_attack_composition(frame: &mut Frame, player: &OverlayPlayer, types: &[OverlayAttackType]) {
+    let total: u64 = player.attack_damage.iter().sum();
+    if total == 0 || types.is_empty() {
+        return;
+    }
+    let shares: Vec<(&OverlayAttackType, f32)> = types
+        .iter()
+        .zip(&player.attack_damage)
+        .filter(|(_, damage)| **damage > 0)
+        .map(|(kind, damage)| (kind, *damage as f32 / total as f32))
+        .collect();
+
+    let left = frame.left + frame.layout.indent;
+    let width = frame.right() - left;
+    let gap = frame.layout.row_gap.max(2.0);
+    let bar_height = (frame.ui.text_line_height() * 0.45).max(4.0);
+
+    frame.y += gap;
+    let mut x = left;
+    for (kind, share) in &shares {
+        let segment = width * share;
+        frame
+            .draw
+            .add_rect(
+                [x, frame.y],
+                [x + segment, frame.y + bar_height],
+                color_with_alpha(kind.color, 230),
+            )
+            .filled(true)
+            .build();
+        x += segment;
+    }
+    frame.y += bar_height + gap;
+
+    // Legend: colour swatch, label and share, flowing onto new lines when full.
+    let line_height = frame.ui.text_line_height();
+    let swatch = line_height * 0.6;
+    let spacing = line_height * 0.8;
+    let mut x = left;
+    for (kind, share) in &shares {
+        let text = format!("{} {:.1}%", kind.label, share * 100.0);
+        let item_width = swatch + 4.0 + frame.ui.calc_text_size(&text)[0];
+        if x > left && x + item_width > left + width {
+            x = left;
+            frame.y += line_height + gap;
+        }
+        let swatch_top = frame.y + (line_height - swatch) / 2.0;
+        frame
+            .draw
+            .add_rect(
+                [x, swatch_top],
+                [x + swatch, swatch_top + swatch],
+                color_with_alpha(kind.color, 255),
+            )
+            .filled(true)
+            .build();
+        frame.text([x + swatch + 4.0, frame.y], TEXT_COLOR, &text);
+        x += item_width + spacing;
+    }
+    frame.y += line_height + gap;
 }
 
 fn color_with_alpha(color: u32, alpha: u8) -> ImColor32 {

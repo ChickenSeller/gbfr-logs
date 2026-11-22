@@ -175,6 +175,26 @@ export type EncounterState = {
   status: EncounterStatus;
   /** Targets for this encounter */
   targets: Record<number, EnemyState>;
+  /** Damage enemies dealt to each party member, keyed by actor index. Missing in old logs. */
+  damageTaken?: Record<number, DamageTakenState>;
+};
+
+export type DamageTakenState = {
+  /** Actor index, as `PlayerState.index` */
+  index: number;
+  characterType: CharacterType;
+  totalDamage: number;
+  hits: number;
+  maxHit: number;
+  /** Per enemy type hash */
+  sources: Record<number, DamageTakenSource>;
+};
+
+export type DamageTakenSource = {
+  rawSourceType: number;
+  totalDamage: number;
+  hits: number;
+  maxHit: number;
 };
 
 /** Display-ready meter snapshot sent to the in-game overlay (`protocol::OverlayState`). */
@@ -189,6 +209,25 @@ export type OverlayState = {
   players: OverlayPlayer[];
   /** Translated names of the enemies hit so far; the overlay reads their HP in game. */
   enemies: OverlayEnemy[];
+  /** Attack types of `OverlayPlayer.attackDamage`, in that order. */
+  attackTypes: OverlayAttackType[];
+  /** Damage taken per party member, most first, filtered by streamer mode. */
+  damageTaken: OverlayDamageTaken[];
+  damageTakenLabels: { title: string; hits: string; maxHit: string };
+};
+
+export type OverlayDamageTaken = {
+  name: string;
+  color: number;
+  totalDamage: number;
+  hits: number;
+  maxHit: number;
+};
+
+export type OverlayAttackType = {
+  label: string;
+  /** Segment colour as 0xRRGGBB. */
+  color: number;
 };
 
 export type OverlayEnemy = {
@@ -251,6 +290,8 @@ export type OverlayPlayer = {
   totalStunValue: number;
   stunPerSecond: number;
   skills: OverlaySkill[];
+  /** Damage per attack type, in the order of `OverlayState.attackTypes`. */
+  attackDamage: number[];
 };
 
 export type OverlaySkill = {

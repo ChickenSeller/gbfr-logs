@@ -15,6 +15,7 @@ use protocol::{Message, OverlaySettings, OverlayUiState, OverlayWindow};
 
 mod config;
 mod cursor;
+mod damage_taken;
 mod dinput;
 mod enemy_hp;
 mod feed;
@@ -110,6 +111,7 @@ struct OverlayRenderLoop {
     font: FontState,
     meter: meter::MeterWindow,
     enemy_hp: enemy_hp::EnemyHpWindow,
+    damage_taken: damage_taken::DamageTakenWindow,
     settings_editor: settings_menu::SettingsEditor,
     /// Latest snapshot from the app; `None` until it connects.
     snapshot: Option<feed::Snapshot>,
@@ -134,6 +136,7 @@ impl OverlayRenderLoop {
             },
             meter: meter::MeterWindow::new(tx.clone()),
             enemy_hp: enemy_hp::EnemyHpWindow::default(),
+            damage_taken: damage_taken::DamageTakenWindow::default(),
             settings_editor: settings_menu::SettingsEditor::new(tx),
             snapshot: None,
             saved_config: config.clone(),
@@ -168,6 +171,9 @@ impl OverlayRenderLoop {
                 ui.separator();
                 ui.text("敌人血量");
                 self.render_enemy_hp_settings(ui);
+                ui.separator();
+                ui.text("承受伤害");
+                self.render_damage_taken_settings(ui);
                 ui.separator();
                 self.settings_editor.render(ui, settings);
                 ui.separator();
@@ -210,6 +216,22 @@ impl OverlayRenderLoop {
                 ui.same_line();
             }
             ui.checkbox(window_label(window), self.config.window_shown_mut(window));
+        }
+    }
+
+    fn render_damage_taken_settings(&mut self, ui: &imgui::Ui) {
+        let taken = &mut self.config.damage_taken;
+        let (min_width, max_width) = config::ENEMY_HP_WIDTH_RANGE;
+        ui.slider_config("宽度##damage_taken", min_width, max_width)
+            .display_format("%.0f px")
+            .build(&mut taken.width);
+        let (min_scale, max_scale) = config::METER_SCALE_RANGE;
+        ui.slider_config("缩放##damage_taken", min_scale, max_scale)
+            .display_format("%.2fx")
+            .build(&mut taken.scale);
+        if ui.button("重置位置和大小##damage_taken") {
+            *taken = config::DamageTakenConfig::default();
+            self.damage_taken.reset_position();
         }
     }
 
@@ -472,6 +494,19 @@ impl ImguiRenderLoop for OverlayRenderLoop {
             self.meter
                 .render(ui, self.menu_open, &mut self.config.meter, view);
         }
+        if self.config.show_damage_taken {
+            let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);
+            let transparency = state.map_or(0.35, |state| {
+                self.settings_editor.effective(&state.settings).transparency
+            });
+            self.damage_taken.render(
+                ui,
+                self.menu_open,
+                &mut self.config.damage_taken,
+                state,
+                transparency,
+            );
+        }
         if self.config.show_enemy_hp {
             let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);
             let names = state.map_or(&[][..], |state| state.enemies.as_slice());
@@ -512,5 +547,6 @@ fn window_label(window: OverlayWindow) -> &'static str {
     match window {
         OverlayWindow::Meter => "伤害统计",
         OverlayWindow::EnemyHp => "敌人血量",
+        OverlayWindow::DamageTaken => "承受伤害",
     }
 }

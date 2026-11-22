@@ -17,6 +17,7 @@ export const NativeLabels = () => {
       overlayWindows: {
         toggle_overlay_meter: t("ui.tray.toggle-overlay-meter"),
         toggle_overlay_enemy_hp: t("ui.tray.toggle-overlay-enemy-hp"),
+        toggle_overlay_damage_taken: t("ui.tray.toggle-overlay-damage-taken"),
       },
       toggleOverlayMenu: t("ui.tray.toggle-overlay-menu"),
       resetWindows: t("ui.tray.reset-windows"),

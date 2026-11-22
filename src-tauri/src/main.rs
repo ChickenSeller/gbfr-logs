@@ -476,7 +476,9 @@ fn connect_and_run_parser(app: AppHandle) {
                                 match protocol::deserialize_message(&msg) {
                                     Ok(msg) => {
                                         match msg {
-                                        protocol::Message::DamageEvent(event) => {
+                                        // The hook sends taken damage as a plain DamageEvent too.
+                                        protocol::Message::DamageEvent(event)
+                                        | protocol::Message::DamageTaken(event) => {
                                             state.on_damage_event(event);
                                         }
                                         protocol::Message::OnAreaEnter(event) => {

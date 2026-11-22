@@ -23,6 +23,8 @@ import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Link, useParams } from "react-router-dom";
 
+import { AttackCompositionTable } from "@/components/AttackCompositionTable";
+import { DamageTakenTable } from "@/components/DamageTakenTable";
 import { Table as MeterTable } from "@/components/Table";
 import { EncounterStateResponse, useEncounterStore } from "@/stores/useEncounterStore";
 import { useMeterSettingsStore } from "@/stores/useMeterSettingsStore";
@@ -453,6 +455,8 @@ export const ViewPage = () => {
         <Tabs defaultValue="overview" variant="outline">
           <Tabs.List>
             <Tabs.Tab value="overview">{t("ui.logs.overview")}</Tabs.Tab>
+            <Tabs.Tab value="attack-types">{t("ui.logs.attack-types")}</Tabs.Tab>
+            <Tabs.Tab value="damage-taken">{t("ui.logs.damage-taken")}</Tabs.Tab>
             <Tabs.Tab value="sba">{t("ui.logs.sba-chart")}</Tabs.Tab>
             <Tabs.Tab value="equipment" disabled={playerData.length === 0}>
               {t("ui.logs.equipment")}
@@ -498,6 +502,26 @@ export const ViewPage = () => {
                   }}
                 />
               </Stack>
+            </Box>
+          </Tabs.Panel>
+          <Tabs.Panel value="attack-types">
+            <Box mt="md">
+              <AttackCompositionTable
+                encounter={encounter}
+                partyData={playerData}
+                playerColors={playerColors}
+                showDisplayNames={show_display_names}
+              />
+            </Box>
+          </Tabs.Panel>
+          <Tabs.Panel value="damage-taken">
+            <Box mt="md">
+              <DamageTakenTable
+                encounter={encounter}
+                partyData={playerData}
+                playerColors={playerColors}
+                showDisplayNames={show_display_names}
+              />
             </Box>
           </Tabs.Panel>
           <Tabs.Panel value="sba">

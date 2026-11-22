@@ -150,7 +150,7 @@ fn draw_enemy(ui: &Ui, config: &EnemyHpConfig, enemy: &EnemyHp, name: Option<&st
 }
 
 /// `113810780` -> `113,810,780`.
-fn group_digits(value: i64) -> String {
+pub fn group_digits(value: i64) -> String {
     let digits = value.unsigned_abs().to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3 + 1);
     if value < 0 {

@@ -16,6 +16,7 @@
       "open-logs": "開啟紀錄",
       "toggle-overlay-meter": "顯示傷害統計",
       "toggle-overlay-enemy-hp": "顯示敵人血量",
+      "toggle-overlay-damage-taken": "顯示承受傷害",
       "toggle-overlay-menu": "顯示遊戲內設定介面",
       "reset-windows": "重設視窗",
       "about": "關於",
@@ -156,7 +157,24 @@
       "sba-chart": "奧義槽",
       "quest-status": "任務狀態",
       "overview": "總覽",
-      "equipment": "角色配置"
+      "equipment": "角色配置",
+      "attack-types": "攻擊類型",
+      "damage-taken": "承受傷害"
+    },
+    "attack-types": {
+      "normal": "普通攻擊",
+      "skill": "技能",
+      "sba": "奧義",
+      "link": "連結攻擊",
+      "supplementary": "追擊",
+      "dot": "持續傷害"
+    },
+    "damage-taken": {
+      "empty": "沒有記錄到承受傷害。此版本之前儲存的日誌不包含這項資料。",
+      "total": "承受傷害",
+      "hits": "次數",
+      "max-hit": "最大單次",
+      "sources": "來源敵人"
     }
   },
   "characters": {

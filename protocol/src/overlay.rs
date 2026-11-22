@@ -34,17 +34,23 @@ pub enum OverlayMessage {
 pub enum OverlayWindow {
     Meter,
     EnemyHp,
+    DamageTaken,
 }
 
 impl OverlayWindow {
     /// Every window, in the order the tray and the menu list them.
-    pub const ALL: [OverlayWindow; 2] = [OverlayWindow::Meter, OverlayWindow::EnemyHp];
+    pub const ALL: [OverlayWindow; 3] = [
+        OverlayWindow::Meter,
+        OverlayWindow::EnemyHp,
+        OverlayWindow::DamageTaken,
+    ];
 
     /// Id of the window's check item in the tray menu.
     pub fn tray_id(self) -> &'static str {
         match self {
             OverlayWindow::Meter => "toggle_overlay_meter",
             OverlayWindow::EnemyHp => "toggle_overlay_enemy_hp",
+            OverlayWindow::DamageTaken => "toggle_overlay_damage_taken",
         }
     }
 
@@ -53,6 +59,7 @@ impl OverlayWindow {
         match self {
             OverlayWindow::Meter => "Show In-game Meter",
             OverlayWindow::EnemyHp => "Show Enemy HP",
+            OverlayWindow::DamageTaken => "Show Damage Taken",
         }
     }
 
@@ -160,6 +167,31 @@ pub struct OverlayState {
     pub players: Vec<OverlayPlayer>,
     /// Translated names of the enemies hit in this encounter. HP itself is read in game.
     pub enemies: Vec<OverlayEnemy>,
+    /// Attack types of `OverlayPlayer::attack_damage`, with their labels and colours.
+    pub attack_types: Vec<OverlayAttackType>,
+    /// Damage taken per party member, most first, already filtered by streamer mode.
+    pub damage_taken: Vec<OverlayDamageTaken>,
+    pub damage_taken_labels: OverlayDamageTakenLabels,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayDamageTaken {
+    /// Name exactly as the meter shows it.
+    pub name: String,
+    /// Bar colour as `0xRRGGBB`.
+    pub color: u32,
+    pub total_damage: u64,
+    pub hits: u32,
+    pub max_hit: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayDamageTakenLabels {
+    pub title: String,
+    pub hits: String,
+    pub max_hit: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -268,6 +300,17 @@ pub struct OverlayPlayer {
     pub stun_per_second: f64,
     /// Skill breakdown, most damage first, grouped when condensed skills are enabled.
     pub skills: Vec<OverlaySkill>,
+    /// Damage per attack type, in the order of `OverlayState::attack_types`.
+    pub attack_damage: Vec<u64>,
+}
+
+/// An attack type of the damage composition (normal attacks, skills, SBA, ...).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayAttackType {
+    pub label: String,
+    /// Segment colour as `0xRRGGBB`.
+    pub color: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -337,6 +380,16 @@ mod tests {
                 }],
                 ..Default::default()
             }],
+            damage_taken: vec![OverlayDamageTaken {
+                name: "[1] Gran".into(),
+                hits: 3,
+                ..Default::default()
+            }],
+            damage_taken_labels: OverlayDamageTakenLabels::default(),
+            attack_types: vec![OverlayAttackType {
+                label: "Skills".into(),
+                color: 0x4C9AFF,
+            }],
             enemies: vec![OverlayEnemy {
                 type_hash: 0x1234_5678,
                 name: "Enemy".into(),
@@ -354,5 +407,6 @@ mod tests {
         assert_eq!(decoded.players[0].name, state.players[0].name);
         assert_eq!(decoded.players[0].skills[0].children.len(), 1);
         assert_eq!(decoded.enemies, state.enemies);
+        assert_eq!(decoded.damage_taken, state.damage_taken);
     }
 }

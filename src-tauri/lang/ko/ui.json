@@ -16,6 +16,7 @@
       "open-logs": "로그 열기",
       "toggle-overlay-meter": "게임 내 미터기 표시",
       "toggle-overlay-enemy-hp": "적 HP 표시",
+      "toggle-overlay-damage-taken": "받은 피해 표시",
       "toggle-overlay-menu": "게임 내 설정 화면 표시",
       "reset-windows": "창 초기화",
       "about": "정보",
@@ -156,7 +157,24 @@
       "sba-chart": "오의 게이지",
       "quest-status": "상태",
       "overview": "오버뷰",
-      "equipment": "장비"
+      "equipment": "장비",
+      "attack-types": "공격 유형",
+      "damage-taken": "받은 피해"
+    },
+    "attack-types": {
+      "normal": "기본공격",
+      "skill": "어빌리티",
+      "sba": "오의",
+      "link": "링크어택",
+      "supplementary": "추가 데미지",
+      "dot": "도트 기술"
+    },
+    "damage-taken": {
+      "empty": "기록된 받은 피해가 없습니다. 이 버전 이전에 저장된 로그에는 포함되지 않습니다.",
+      "total": "받은 피해",
+      "hits": "횟수",
+      "max-hit": "최대 피해",
+      "sources": "적별"
     }
   },
   "characters": {

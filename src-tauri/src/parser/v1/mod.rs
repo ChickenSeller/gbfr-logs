@@ -225,6 +225,28 @@ impl EnemyState {
     }
 }
 
+/// Damage enemies dealt to one party member.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DamageTakenState {
+    index: u32,
+    character_type: CharacterType,
+    total_damage: u64,
+    hits: u32,
+    max_hit: i32,
+    /// Per enemy type hash.
+    sources: HashMap<u32, DamageTakenSource>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DamageTakenSource {
+    raw_source_type: u32,
+    total_damage: u64,
+    hits: u32,
+    max_hit: i32,
+}
+
 /// The necessary details of an encounter that can be used to recreate the state at any point in time.
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -330,6 +352,9 @@ pub struct DerivedEncounterState {
     pub party: HashMap<u32, PlayerState>,
     /// Derived target stats, damage done to each target.
     targets: HashMap<u32, EnemyState>,
+    /// Damage taken by each party member, keyed by actor index.
+    #[serde(default)]
+    damage_taken: HashMap<u32, DamageTakenState>,
 }
 
 impl Default for DerivedEncounterState {
@@ -344,6 +369,7 @@ impl Default for DerivedEncounterState {
             status: ParserStatus::Waiting,
             party: HashMap::new(),
             targets: HashMap::new(),
+            damage_taken: HashMap::new(),
         }
     }
 }
@@ -361,6 +387,34 @@ impl DerivedEncounterState {
     fn start(&mut self, now: i64) {
         self.start_time = now;
         self.end_time = now;
+    }
+
+    fn process_damage_taken(&mut self, event: &DamageEvent) {
+        let player = self
+            .damage_taken
+            .entry(event.target.parent_index)
+            .or_insert_with(|| DamageTakenState {
+                index: event.target.parent_index,
+                character_type: CharacterType::from_hash(event.target.parent_actor_type),
+                total_damage: 0,
+                hits: 0,
+                max_hit: 0,
+                sources: HashMap::new(),
+            });
+        player.total_damage += event.damage as u64;
+        player.hits += 1;
+        player.max_hit = player.max_hit.max(event.damage);
+
+        let source = player
+            .sources
+            .entry(event.source.parent_actor_type)
+            .or_insert_with(|| DamageTakenSource {
+                raw_source_type: event.source.parent_actor_type,
+                ..Default::default()
+            });
+        source.total_damage += event.damage as u64;
+        source.hits += 1;
+        source.max_hit = source.max_hit.max(event.damage);
     }
 
     /// Gets the primary target of the encounter (the target that had the most damage done to it)
@@ -440,7 +494,7 @@ impl Serialize for MeterEncounterState<'_> {
         S: Serializer,
     {
         let encounter = self.0;
-        let mut state = serializer.serialize_struct("DerivedEncounterState", 9)?;
+        let mut state = serializer.serialize_struct("DerivedEncounterState", 10)?;
         state.serialize_field("startTime", &encounter.start_time)?;
         state.serialize_field("endTime", &encounter.end_time)?;
         state.serialize_field("totalDamage", &encounter.total_damage)?;
@@ -450,6 +504,7 @@ impl Serialize for MeterEncounterState<'_> {
         state.serialize_field("status", &encounter.status)?;
         state.serialize_field("party", &MeterParty(&encounter.party))?;
         state.serialize_field("targets", &encounter.targets)?;
+        state.serialize_field("damageTaken", &encounter.damage_taken)?;
         state.end()
     }
 }
@@ -614,6 +669,7 @@ impl Parser {
                     self.derived_state
                         .process_damage_event(*timestamp, &damage_instance);
                 }
+                Message::DamageTaken(event) => self.derived_state.process_damage_taken(event),
                 _ => {}
             }
         }
@@ -646,6 +702,13 @@ impl Parser {
 
                         self.derived_state
                             .process_damage_event(*timestamp, &damage_instance);
+                    }
+                }
+                // Filtered by the enemy that dealt it, matching the damage-dealt filter.
+                Message::DamageTaken(event) => {
+                    let source_type = EnemyType::from_hash(event.source.parent_actor_type);
+                    if targets.is_empty() || targets.contains(&source_type) {
+                        self.derived_state.process_damage_taken(event);
                     }
                 }
                 _ => {}
@@ -776,6 +839,13 @@ impl Parser {
         let now = Utc::now().timestamp_millis();
 
         if Self::should_ignore_damage_event(&event) {
+            // Only while a fight is running: the first damage dealt resets the encounter.
+            if Self::is_damage_taken(&event) && self.status == ParserStatus::InProgress {
+                self.encounter
+                    .push_event(now, Message::DamageTaken(event.clone()));
+                self.derived_state.process_damage_taken(&event);
+                self.emit_meter_event("encounter-update");
+            }
             return;
         }
 
@@ -1138,6 +1208,19 @@ impl Parser {
     }
 
     // Checks if the damage event should be ignored for the purposes of parsing.
+    /// An enemy (no player character behind the source) hitting a party member.
+    fn is_damage_taken(event: &DamageEvent) -> bool {
+        event.damage > 0
+            && matches!(
+                CharacterType::from_hash(event.source.parent_actor_type),
+                CharacterType::Unknown(_)
+            )
+            && !matches!(
+                CharacterType::from_hash(event.target.parent_actor_type),
+                CharacterType::Unknown(_)
+            )
+    }
+
     fn should_ignore_damage_event(event: &DamageEvent) -> bool {
         let character_type = CharacterType::from_hash(event.source.parent_actor_type);
 
@@ -1262,6 +1345,60 @@ mod tests {
 
         assert_eq!(parser.status, ParserStatus::Waiting);
         assert_eq!(parser.start_time(), 1);
+    }
+
+    fn hit(source: (u32, u32), target: (u32, u32), damage: i32) -> DamageEvent {
+        DamageEvent {
+            source: Actor {
+                index: source.0,
+                actor_type: source.1,
+                parent_index: source.0,
+                parent_actor_type: source.1,
+            },
+            target: Actor {
+                index: target.0,
+                actor_type: target.1,
+                parent_index: target.0,
+                parent_actor_type: target.1,
+            },
+            damage,
+            flags: 0,
+            action_id: ActionType::Normal(100),
+            attack_rate: None,
+            stun_value: None,
+            damage_cap: None,
+            details: None,
+        }
+    }
+
+    #[test]
+    fn damage_taken_is_tracked_apart_from_damage_dealt() {
+        const GRAN: u32 = 0x26A4848A;
+        const ENEMY: u32 = 0x12345678;
+        let mut parser = Parser::default();
+
+        // Taken damage before the fight starts is dropped: the first hit resets the encounter.
+        parser.on_damage_event(hit((9, ENEMY), (1, GRAN), 50));
+        parser.on_damage_event(hit((1, GRAN), (9, ENEMY), 1_000));
+        parser.on_damage_event(hit((9, ENEMY), (1, GRAN), 300));
+        parser.on_damage_event(hit((9, ENEMY), (1, GRAN), 200));
+
+        let check = |state: &DerivedEncounterState| {
+            assert_eq!(state.total_damage, 1_000);
+            assert_eq!(state.party.len(), 1);
+            let taken = &state.damage_taken[&1];
+            assert_eq!(taken.total_damage, 500);
+            assert_eq!(taken.hits, 2);
+            assert_eq!(taken.max_hit, 300);
+            assert_eq!(taken.sources[&ENEMY].total_damage, 500);
+        };
+        check(&parser.derived_state);
+
+        // Saved logs are re-derived from the event log.
+        parser.reparse();
+        check(&parser.derived_state);
+        parser.reparse_with_options(&[EnemyType::from_hash(0xDEADBEEF)]);
+        assert!(parser.derived_state.damage_taken.is_empty());
     }
 
     #[test]

@@ -288,6 +288,9 @@ pub enum Message {
     OnBattleEnd,
     /// Player name and actor mapping without version-sensitive equipment data.
     PlayerIdentityEvent(PlayerIdentityEvent),
+    /// Damage an enemy dealt to a party member. The hook sends it as a plain `DamageEvent`;
+    /// the parser stores it under this variant so the damage-dealt paths never count it.
+    DamageTaken(DamageEvent),
     /// The player pressed a copy button in the in-game overlay. Handled by the app's UI and
     /// never stored in encounter logs. Must stay after every logged variant: bincode encodes
     /// the variant index.

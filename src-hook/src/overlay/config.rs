@@ -27,6 +27,8 @@ pub struct OverlayConfig {
     pub meter: MeterConfig,
     pub show_enemy_hp: bool,
     pub enemy_hp: EnemyHpConfig,
+    pub show_damage_taken: bool,
+    pub damage_taken: DamageTakenConfig,
     pub font: FontSettings,
     /// Opens and closes the in-game menu.
     pub menu_hotkey: super::hotkey::KeyCombo,
@@ -39,6 +41,8 @@ impl Default for OverlayConfig {
             meter: MeterConfig::default(),
             show_enemy_hp: true,
             enemy_hp: EnemyHpConfig::default(),
+            show_damage_taken: true,
+            damage_taken: DamageTakenConfig::default(),
             font: FontSettings::default(),
             menu_hotkey: super::hotkey::KeyCombo::default(),
         }
@@ -111,12 +115,32 @@ impl Default for EnemyHpConfig {
     }
 }
 
+/// The damage taken window.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct DamageTakenConfig {
+    pub position: Option<[f32; 2]>,
+    pub width: f32,
+    pub scale: f32,
+}
+
+impl Default for DamageTakenConfig {
+    fn default() -> Self {
+        Self {
+            position: None,
+            width: 300.0,
+            scale: 1.0,
+        }
+    }
+}
+
 impl OverlayConfig {
     /// Whether an independent window is shown.
     pub fn window_shown(&self, window: protocol::OverlayWindow) -> &bool {
         match window {
             protocol::OverlayWindow::Meter => &self.show_meter,
             protocol::OverlayWindow::EnemyHp => &self.show_enemy_hp,
+            protocol::OverlayWindow::DamageTaken => &self.show_damage_taken,
         }
     }
 
@@ -124,6 +148,7 @@ impl OverlayConfig {
         match window {
             protocol::OverlayWindow::Meter => &mut self.show_meter,
             protocol::OverlayWindow::EnemyHp => &mut self.show_enemy_hp,
+            protocol::OverlayWindow::DamageTaken => &mut self.show_damage_taken,
         }
     }
 
@@ -140,6 +165,16 @@ impl OverlayConfig {
             .is_some_and(|[x, y]| !x.is_finite() || !y.is_finite())
         {
             enemy.position = None;
+        }
+        let taken_defaults = DamageTakenConfig::default();
+        let taken = &mut self.damage_taken;
+        taken.width = clamp_or(taken.width, ENEMY_HP_WIDTH_RANGE, taken_defaults.width);
+        taken.scale = clamp_or(taken.scale, METER_SCALE_RANGE, taken_defaults.scale);
+        if taken
+            .position
+            .is_some_and(|[x, y]| !x.is_finite() || !y.is_finite())
+        {
+            taken.position = None;
         }
 
         let defaults = MeterConfig::default();

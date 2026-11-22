@@ -16,6 +16,7 @@
       "open-logs": "打开日志",
       "toggle-overlay-meter": "显示伤害统计",
       "toggle-overlay-enemy-hp": "显示敌人血量",
+      "toggle-overlay-damage-taken": "显示承受伤害",
       "toggle-overlay-menu": "显示游戏内设置界面",
       "reset-windows": "重置窗口",
       "about": "关于",
@@ -156,7 +157,24 @@
       "sba-chart": "奥义槽",
       "quest-status": "任务状态",
       "overview": "总览",
-      "equipment": "角色配置"
+      "equipment": "角色配置",
+      "attack-types": "攻击类型",
+      "damage-taken": "承受伤害"
+    },
+    "attack-types": {
+      "normal": "普通攻击",
+      "skill": "技能",
+      "sba": "奥义",
+      "link": "连锁攻击",
+      "supplementary": "追击",
+      "dot": "持续伤害"
+    },
+    "damage-taken": {
+      "empty": "没有记录到承受伤害。此版本之前保存的日志不包含这项数据。",
+      "total": "承受伤害",
+      "hits": "次数",
+      "max-hit": "最大单次",
+      "sources": "来源敌人"
     }
   },
   "characters": {

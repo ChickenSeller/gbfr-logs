@@ -16,6 +16,7 @@
       "open-logs": "Open Logs",
       "toggle-overlay-meter": "Show In-game Meter",
       "toggle-overlay-enemy-hp": "Show Enemy HP",
+      "toggle-overlay-damage-taken": "Show Damage Taken",
       "toggle-overlay-menu": "Show In-game Settings",
       "reset-windows": "Reset Windows",
       "about": "About",
@@ -156,7 +157,24 @@
       "sba-chart": "Skybound Arts Gauge",
       "quest-status": "Status",
       "overview": "Overview",
-      "equipment": "Equipment"
+      "equipment": "Equipment",
+      "attack-types": "Attack Types",
+      "damage-taken": "Damage Taken"
+    },
+    "attack-types": {
+      "normal": "Normal Attacks",
+      "skill": "Skills",
+      "sba": "Skybound Arts",
+      "link": "Link Attacks",
+      "supplementary": "Supplementary",
+      "dot": "Damage over Time"
+    },
+    "damage-taken": {
+      "empty": "No damage taken was recorded. Logs saved before this version do not include it.",
+      "total": "Damage Taken",
+      "hits": "Hits",
+      "max-hit": "Largest Hit",
+      "sources": "By Enemy"
     }
   },
   "characters": {

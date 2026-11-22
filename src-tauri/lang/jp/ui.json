@@ -16,6 +16,7 @@
       "open-logs": "ログを開く",
       "toggle-overlay-meter": "ゲーム内メーターを表示",
       "toggle-overlay-enemy-hp": "敵HPを表示",
+      "toggle-overlay-damage-taken": "被ダメージを表示",
       "toggle-overlay-menu": "ゲーム内設定画面を表示",
       "reset-windows": "ウィンドウをリセット",
       "about": "このアプリについて",
@@ -156,7 +157,24 @@
       "sba-chart": "奥義ゲージ",
       "quest-status": "状態",
       "overview": "概要",
-      "equipment": "装備"
+      "equipment": "装備",
+      "attack-types": "攻撃タイプ",
+      "damage-taken": "被ダメージ"
+    },
+    "attack-types": {
+      "normal": "通常攻撃",
+      "skill": "アビリティ",
+      "sba": "奥義",
+      "link": "リンクアタック",
+      "supplementary": "追撃",
+      "dot": "継続ダメージ"
+    },
+    "damage-taken": {
+      "empty": "被ダメージは記録されていません。このバージョンより前に保存したログには含まれません。",
+      "total": "被ダメージ",
+      "hits": "回数",
+      "max-hit": "最大被ダメージ",
+      "sources": "敵別"
     }
   },
   "characters": {

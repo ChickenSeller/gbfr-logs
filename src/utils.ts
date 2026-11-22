@@ -15,7 +15,7 @@ import {
   SortType,
 } from "./types";
 
-import { t } from "i18next";
+import i18n, { t } from "i18next";
 import { useEffect, useRef } from "react";
 
 export const EMPTY_ID = 2289754288;
@@ -91,6 +91,10 @@ export const epochToLocalTime = (epoch: number): string => {
     minute: "numeric",
   }).format(utc);
 };
+
+/** Whether the character's own skill table names this action id (see `attackCategories`). */
+export const hasOwnSkillName = (characterType: CharacterType, id: number): boolean =>
+  typeof characterType === "string" && i18n.exists(`skills.${characterType}.${id}`);
 
 export const getSkillName = (characterType: CharacterType, skill: SkillState) => {
   switch (true) {
