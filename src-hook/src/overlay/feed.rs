@@ -3,7 +3,7 @@
 //! The pipe task stores the newest snapshot; the render thread copies it with `try_lock` and
 //! keeps drawing its previous copy when the lock is busy, so it never waits on the pipe.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -11,7 +11,7 @@ use futures::StreamExt;
 use interprocess::os::windows::named_pipe::tokio::PipeListenerOptionsExt;
 use interprocess::os::windows::named_pipe::{PipeListenerOptions, PipeMode};
 use log::{info, warn};
-use protocol::{OverlayMessage, OverlayNotice, OverlayState};
+use protocol::{OverlayMessage, OverlayNotice, OverlayState, OverlayWindow};
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 
 struct Latest {
@@ -58,8 +58,8 @@ pub fn spawn() {
                                 Ok(OverlayMessage::ToggleMenu) => {
                                     MENU_TOGGLE.store(true, Ordering::Relaxed)
                                 }
-                                Ok(OverlayMessage::ToggleMeter) => {
-                                    METER_TOGGLE.store(true, Ordering::Relaxed)
+                                Ok(OverlayMessage::ToggleWindow(window)) => {
+                                    request_window_toggle(window)
                                 }
                                 Err(error) => warn!("Bad overlay message: {error}"),
                             }
@@ -92,12 +92,29 @@ pub fn take_menu_toggle() -> bool {
     MENU_TOGGLE.swap(false, Ordering::Relaxed)
 }
 
-/// Set by the app (tray menu) to show or hide the meter.
-static METER_TOGGLE: AtomicBool = AtomicBool::new(false);
+/// Windows the app (tray menu) asked to show or hide, one bit per `OverlayWindow::ALL` entry.
+static WINDOW_TOGGLES: AtomicU32 = AtomicU32::new(0);
 
-/// Whether the app asked to toggle the meter since the last call.
-pub fn take_meter_toggle() -> bool {
-    METER_TOGGLE.swap(false, Ordering::Relaxed)
+fn window_bit(window: OverlayWindow) -> u32 {
+    let index = OverlayWindow::ALL
+        .iter()
+        .position(|w| *w == window)
+        .unwrap_or(0);
+    1 << index
+}
+
+fn request_window_toggle(window: OverlayWindow) {
+    // Two clicks before the next frame cancel out, like toggling twice.
+    WINDOW_TOGGLES.fetch_xor(window_bit(window), Ordering::Relaxed);
+}
+
+/// The windows the app asked to toggle since the last call.
+pub fn take_window_toggles() -> Vec<OverlayWindow> {
+    let bits = WINDOW_TOGGLES.swap(0, Ordering::Relaxed);
+    OverlayWindow::ALL
+        .into_iter()
+        .filter(|window| bits & window_bit(*window) != 0)
+        .collect()
 }
 
 fn store_notice(notice: OverlayNotice) {

@@ -13,7 +13,11 @@ export const NativeLabels = () => {
   useEffect(() => {
     const labels = {
       openLogs: t("ui.tray.open-logs"),
-      toggleOverlayMeter: t("ui.tray.toggle-overlay-meter"),
+      // Keyed by the tray ids of protocol::OverlayWindow.
+      overlayWindows: {
+        toggle_overlay_meter: t("ui.tray.toggle-overlay-meter"),
+        toggle_overlay_enemy_hp: t("ui.tray.toggle-overlay-enemy-hp"),
+      },
       toggleOverlayMenu: t("ui.tray.toggle-overlay-menu"),
       resetWindows: t("ui.tray.reset-windows"),
       about: t("ui.tray.about"),

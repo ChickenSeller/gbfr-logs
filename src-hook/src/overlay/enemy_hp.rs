@@ -1,0 +1,189 @@
+//! In-game enemy HP bars, read live from the game (see `hooks::enemy_hp`).
+
+use std::collections::HashMap;
+
+use hudhook::imgui::{Condition, ImColor32, Ui, WindowFlags};
+use protocol::OverlayEnemy;
+
+use super::config::EnemyHpConfig;
+use crate::hooks::enemy_hp::{self, EnemyHp};
+
+const DEFAULT_POSITION: [f32; 2] = [40.0, 40.0];
+const MIN_VISIBLE: [f32; 2] = [80.0, 30.0];
+const MIN_INTERACTIVE_ALPHA: f32 = 0.6;
+const PADDING: f32 = 6.0;
+
+const TRACK_COLOR: ImColor32 = ImColor32::from_rgba(0, 0, 0, 140);
+const HP_COLOR: ImColor32 = ImColor32::from_rgba(214, 64, 52, 230);
+const LOW_HP_COLOR: ImColor32 = ImColor32::from_rgba(255, 160, 40, 230);
+const DEFEATED_COLOR: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
+const TEXT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
+/// Below this share of max HP the bar turns orange.
+const LOW_HP_RATIO: f32 = 0.3;
+
+#[derive(Default)]
+pub struct EnemyHpWindow {
+    reset_position: bool,
+}
+
+impl EnemyHpWindow {
+    pub fn reset_position(&mut self) {
+        self.reset_position = true;
+    }
+
+    pub fn render(
+        &mut self,
+        ui: &Ui,
+        interactive: bool,
+        config: &mut EnemyHpConfig,
+        names: &[OverlayEnemy],
+        transparency: f32,
+    ) {
+        let enemies = enemy_hp::snapshot();
+        if enemies.is_empty() && !interactive {
+            return;
+        }
+        let names: HashMap<u32, &str> = names
+            .iter()
+            .map(|enemy| (enemy.type_hash, enemy.name.as_str()))
+            .collect();
+
+        let mut flags = WindowFlags::NO_TITLE_BAR
+            | WindowFlags::NO_COLLAPSE
+            | WindowFlags::NO_RESIZE
+            | WindowFlags::NO_SCROLLBAR
+            | WindowFlags::ALWAYS_AUTO_RESIZE
+            | WindowFlags::NO_FOCUS_ON_APPEARING;
+        if !interactive {
+            flags |= WindowFlags::NO_INPUTS;
+        }
+        let (position, condition) = if std::mem::take(&mut self.reset_position) {
+            config.position = None;
+            (DEFAULT_POSITION, Condition::Always)
+        } else {
+            let saved = config.position.unwrap_or(DEFAULT_POSITION);
+            (
+                on_screen(saved, ui.io().display_size),
+                Condition::FirstUseEver,
+            )
+        };
+        let alpha = if interactive {
+            transparency.max(MIN_INTERACTIVE_ALPHA)
+        } else {
+            transparency
+        };
+
+        ui.window("GBFR Logs 敌人血量")
+            .position(position, condition)
+            .bg_alpha(alpha.clamp(0.0, 1.0))
+            .flags(flags)
+            .build(|| {
+                ui.set_window_font_scale(config.scale);
+                if enemies.is_empty() {
+                    ui.text_disabled("敌人血量：攻击敌人后显示  菜单打开时可拖动此窗口");
+                    // Keep the placeholder as wide as a bar so the window can be placed.
+                    ui.dummy([config.width * config.scale, 0.0]);
+                }
+                let shown = enemies.iter().take(config.max_enemies as usize);
+                for enemy in shown {
+                    draw_enemy(ui, config, enemy, names.get(&enemy.type_hash).copied());
+                }
+                if interactive {
+                    config.position = Some(ui.window_pos());
+                }
+            });
+    }
+}
+
+fn draw_enemy(ui: &Ui, config: &EnemyHpConfig, enemy: &EnemyHp, name: Option<&str>) {
+    let width = config.width * config.scale;
+    let bar_height = 10.0 * config.scale;
+    let ratio = (enemy.hp as f64 / enemy.max_hp as f64).clamp(0.0, 1.0) as f32;
+
+    let fallback;
+    let name = match name {
+        Some(name) => name,
+        None => {
+            fallback = format!("{:08x}", enemy.type_hash);
+            &fallback
+        }
+    };
+    let value = format!(
+        "{} / {}  {:.1}%",
+        group_digits(enemy.hp),
+        group_digits(enemy.max_hp),
+        ratio * 100.0
+    );
+
+    let start = ui.cursor_screen_pos();
+    let color = if enemy.hp == 0 {
+        DEFEATED_COLOR
+    } else {
+        TEXT_COLOR
+    };
+    ui.text_colored(color, name);
+    let value_width = ui.calc_text_size(&value)[0];
+    ui.same_line_with_pos(start[0] - ui.window_pos()[0] + (width - value_width).max(0.0));
+    ui.text_colored(color, &value);
+
+    let top = ui.cursor_screen_pos()[1];
+    let left = start[0];
+    let draw = ui.get_window_draw_list();
+    draw.add_rect([left, top], [left + width, top + bar_height], TRACK_COLOR)
+        .filled(true)
+        .rounding(2.0)
+        .build();
+    if ratio > 0.0 {
+        let fill = if ratio < LOW_HP_RATIO {
+            LOW_HP_COLOR
+        } else {
+            HP_COLOR
+        };
+        draw.add_rect([left, top], [left + width * ratio, top + bar_height], fill)
+            .filled(true)
+            .rounding(2.0)
+            .build();
+    }
+    drop(draw);
+    ui.dummy([width, bar_height + PADDING]);
+}
+
+/// `113810780` -> `113,810,780`.
+fn group_digits(value: i64) -> String {
+    let digits = value.unsigned_abs().to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3 + 1);
+    if value < 0 {
+        out.push('-');
+    }
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn on_screen(position: [f32; 2], display: [f32; 2]) -> [f32; 2] {
+    if display[0] <= 0.0 || display[1] <= 0.0 {
+        return position;
+    }
+    [
+        position[0].clamp(0.0, (display[0] - MIN_VISIBLE[0]).max(0.0)),
+        position[1].clamp(0.0, (display[1] - MIN_VISIBLE[1]).max(0.0)),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::group_digits;
+
+    #[test]
+    fn groups_thousands() {
+        assert_eq!(group_digits(0), "0");
+        assert_eq!(group_digits(999), "999");
+        assert_eq!(group_digits(1_000), "1,000");
+        assert_eq!(group_digits(113_810_780), "113,810,780");
+    }
+}

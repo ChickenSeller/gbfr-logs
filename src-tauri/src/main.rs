@@ -558,17 +558,20 @@ fn connect_and_run_parser(app: AppHandle) {
 
 fn system_tray_with_menu() -> SystemTray {
     let logs = CustomMenuItem::new("open_logs", "Open Logs");
-    let overlay_meter =
-        CustomMenuItem::new("toggle_overlay_meter", TOGGLE_OVERLAY_METER_DEFAULT).selected();
     let overlay_menu =
         CustomMenuItem::new("toggle_overlay_menu", TOGGLE_OVERLAY_MENU_DEFAULT).selected();
     let reset_windows = CustomMenuItem::new("reset_windows", "Reset Windows");
     let about = CustomMenuItem::new("about", "About");
     let quit = CustomMenuItem::new("quit", "Quit");
 
-    let menu = SystemTrayMenu::new()
-        .add_item(logs)
-        .add_item(overlay_meter)
+    let mut menu = SystemTrayMenu::new().add_item(logs);
+    // One check item per in-game window, all shown by default.
+    for window in protocol::OverlayWindow::ALL {
+        menu = menu.add_item(
+            CustomMenuItem::new(window.tray_id(), window.default_label()).selected(),
+        );
+    }
+    let menu = menu
         .add_item(overlay_menu)
         .add_item(reset_windows)
         .add_item(about)
@@ -584,7 +587,8 @@ fn system_tray_with_menu() -> SystemTray {
 #[serde(rename_all = "camelCase")]
 struct NativeLabels {
     open_logs: String,
-    toggle_overlay_meter: String,
+    /// Labels of the window check items, keyed by `OverlayWindow::tray_id`.
+    overlay_windows: std::collections::HashMap<String, String>,
     toggle_overlay_menu: String,
     reset_windows: String,
     about: String,
@@ -610,7 +614,6 @@ impl Default for OverlayMenuLabel {
     }
 }
 
-const TOGGLE_OVERLAY_METER_DEFAULT: &str = "Show In-game Meter";
 const TOGGLE_OVERLAY_MENU_DEFAULT: &str = "Show In-game Settings";
 
 /// Updates the overlay menu tray item from its stored text and hotkey.
@@ -630,9 +633,11 @@ fn refresh_overlay_menu_label(app: &AppHandle) {
 /// Mirrors the in-game overlay in the tray: check marks and the menu hotkey.
 fn apply_overlay_ui_state(app: &AppHandle, ui_state: protocol::OverlayUiState) {
     let tray = app.tray_handle();
-    let _ = tray
-        .get_item("toggle_overlay_meter")
-        .set_selected(ui_state.meter_visible);
+    for window in protocol::OverlayWindow::ALL {
+        let _ = tray
+            .get_item(window.tray_id())
+            .set_selected(ui_state.visible_windows.contains(&window));
+    }
     let _ = tray
         .get_item("toggle_overlay_menu")
         .set_selected(ui_state.menu_open);
@@ -663,12 +668,16 @@ fn set_native_labels(app: AppHandle, about_title: State<AboutTitle>, labels: Nat
 
     for (id, title) in [
         ("open_logs", labels.open_logs),
-        ("toggle_overlay_meter", labels.toggle_overlay_meter),
         ("reset_windows", labels.reset_windows),
         ("about", labels.about),
         ("quit", labels.quit),
     ] {
         let _ = tray.get_item(id).set_title(title);
+    }
+    for window in protocol::OverlayWindow::ALL {
+        if let Some(title) = labels.overlay_windows.get(window.tray_id()) {
+            let _ = tray.get_item(window.tray_id()).set_title(title);
+        }
     }
 
     if let Some(window) = app.get_window("logs") {
@@ -708,9 +717,10 @@ fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
                 let feed = handle.state::<overlay::OverlayFeed>().inner().clone();
                 tauri::async_runtime::spawn(async move { feed.toggle_menu().await });
             }
-            "toggle_overlay_meter" => {
+            id if protocol::OverlayWindow::from_tray_id(id).is_some() => {
+                let window = protocol::OverlayWindow::from_tray_id(id).unwrap();
                 let feed = handle.state::<overlay::OverlayFeed>().inner().clone();
-                tauri::async_runtime::spawn(async move { feed.toggle_meter().await });
+                tauri::async_runtime::spawn(async move { feed.toggle_window(window).await });
             }
             "reset_windows" => {
                 if let Some(window) = handle.get_window("logs") {

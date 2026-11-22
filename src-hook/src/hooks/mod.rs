@@ -20,6 +20,7 @@ mod area;
 mod damage;
 mod damage_details;
 mod death;
+pub mod enemy_hp;
 mod ffi;
 mod globals;
 mod player;
@@ -149,6 +150,7 @@ pub(super) fn reset_battle_identity_state() {
     }
 
     player::reset_battle_identity_state();
+    enemy_hp::reset();
     info!("Battle identity caches reset");
 }
 

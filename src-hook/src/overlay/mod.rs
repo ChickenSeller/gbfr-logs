@@ -11,11 +11,12 @@ use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::imgui::{self, Condition, WindowFlags};
 use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter, RenderContext};
 use log::{info, warn};
-use protocol::{Message, OverlaySettings, OverlayUiState};
+use protocol::{Message, OverlaySettings, OverlayUiState, OverlayWindow};
 
 mod config;
 mod cursor;
 mod dinput;
+mod enemy_hp;
 mod feed;
 mod fonts;
 mod hotkey;
@@ -108,6 +109,7 @@ struct OverlayRenderLoop {
     key_capture: Option<hotkey::KeyCapture>,
     font: FontState,
     meter: meter::MeterWindow,
+    enemy_hp: enemy_hp::EnemyHpWindow,
     settings_editor: settings_menu::SettingsEditor,
     /// Latest snapshot from the app; `None` until it connects.
     snapshot: Option<feed::Snapshot>,
@@ -131,6 +133,7 @@ impl OverlayRenderLoop {
                 ..FontState::default()
             },
             meter: meter::MeterWindow::new(tx.clone()),
+            enemy_hp: enemy_hp::EnemyHpWindow::default(),
             settings_editor: settings_menu::SettingsEditor::new(tx),
             snapshot: None,
             saved_config: config.clone(),
@@ -158,8 +161,13 @@ impl OverlayRenderLoop {
             .build(|| {
                 self.render_hotkey_settings(ui);
                 ui.separator();
-                ui.checkbox("显示伤害统计", &mut self.config.show_meter);
+                self.render_window_toggles(ui);
+                ui.separator();
+                ui.text("伤害统计");
                 self.render_meter_settings(ui);
+                ui.separator();
+                ui.text("敌人血量");
+                self.render_enemy_hp_settings(ui);
                 ui.separator();
                 self.settings_editor.render(ui, settings);
                 ui.separator();
@@ -192,6 +200,36 @@ impl OverlayRenderLoop {
             self.meter.reset_position();
         }
         ui.text_disabled("菜单打开时可直接拖动伤害统计窗口");
+    }
+
+    /// One checkbox per independent window; the tray mirrors them.
+    fn render_window_toggles(&mut self, ui: &imgui::Ui) {
+        ui.text("显示的窗口");
+        for (i, window) in OverlayWindow::ALL.into_iter().enumerate() {
+            if i > 0 {
+                ui.same_line();
+            }
+            ui.checkbox(window_label(window), self.config.window_shown_mut(window));
+        }
+    }
+
+    fn render_enemy_hp_settings(&mut self, ui: &imgui::Ui) {
+        let enemy = &mut self.config.enemy_hp;
+        let (min_width, max_width) = config::ENEMY_HP_WIDTH_RANGE;
+        ui.slider_config("宽度##enemy_hp", min_width, max_width)
+            .display_format("%.0f px")
+            .build(&mut enemy.width);
+        let (min_scale, max_scale) = config::METER_SCALE_RANGE;
+        ui.slider_config("缩放##enemy_hp", min_scale, max_scale)
+            .display_format("%.2fx")
+            .build(&mut enemy.scale);
+        let (min_count, max_count) = config::ENEMY_HP_COUNT_RANGE;
+        ui.slider_config("显示数量##enemy_hp", min_count, max_count)
+            .build(&mut enemy.max_enemies);
+        if ui.button("重置位置和大小##enemy_hp") {
+            *enemy = config::EnemyHpConfig::default();
+            self.enemy_hp.reset_position();
+        }
     }
 
     /// Shows the menu hotkey and lets the user record a new one.
@@ -334,7 +372,10 @@ impl OverlayRenderLoop {
     /// connected app catches up.
     fn report_ui_state(&mut self) {
         let state = OverlayUiState {
-            meter_visible: self.config.show_meter,
+            visible_windows: OverlayWindow::ALL
+                .into_iter()
+                .filter(|window| *self.config.window_shown(*window))
+                .collect(),
             menu_open: self.menu_open,
             menu_hotkey: self.config.menu_hotkey.label(),
         };
@@ -402,8 +443,9 @@ impl ImguiRenderLoop for OverlayRenderLoop {
             self.menu_open = !self.menu_open;
             self.key_capture = None;
         }
-        if feed::take_meter_toggle() {
-            self.config.show_meter = !self.config.show_meter;
+        for window in feed::take_window_toggles() {
+            let shown = self.config.window_shown_mut(window);
+            *shown = !*shown;
         }
         if !self.menu_open {
             self.key_capture = None;
@@ -430,6 +472,20 @@ impl ImguiRenderLoop for OverlayRenderLoop {
             self.meter
                 .render(ui, self.menu_open, &mut self.config.meter, view);
         }
+        if self.config.show_enemy_hp {
+            let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);
+            let names = state.map_or(&[][..], |state| state.enemies.as_slice());
+            let transparency = state.map_or(0.35, |state| {
+                self.settings_editor.effective(&state.settings).transparency
+            });
+            self.enemy_hp.render(
+                ui,
+                self.menu_open,
+                &mut self.config.enemy_hp,
+                names,
+                transparency,
+            );
+        }
         if self.menu_open {
             // A copy, so the menu can borrow the loop mutably while editing.
             let settings = self
@@ -448,5 +504,13 @@ impl ImguiRenderLoop for OverlayRenderLoop {
         } else {
             MessageFilter::empty()
         }
+    }
+}
+
+/// Menu label of a window's visibility checkbox.
+fn window_label(window: OverlayWindow) -> &'static str {
+    match window {
+        OverlayWindow::Meter => "伤害统计",
+        OverlayWindow::EnemyHp => "敌人血量",
     }
 }

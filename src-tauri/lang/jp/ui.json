@@ -15,6 +15,7 @@
     "tray": {
       "open-logs": "ログを開く",
       "toggle-overlay-meter": "ゲーム内メーターを表示",
+      "toggle-overlay-enemy-hp": "敵HPを表示",
       "toggle-overlay-menu": "ゲーム内設定画面を表示",
       "reset-windows": "ウィンドウをリセット",
       "about": "このアプリについて",

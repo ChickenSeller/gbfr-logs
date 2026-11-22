@@ -154,6 +154,8 @@ export type EnemyState = {
   targetType: EnemyType;
   /** Total damage done to this target */
   totalDamage: number;
+  /** Hash ID of the enemy type */
+  rawTargetType: number;
 };
 
 export type EncounterStatus = "Waiting" | "InProgress" | "Stopped";
@@ -185,6 +187,13 @@ export type OverlayState = {
   settings: OverlaySettings;
   /** Party order; the overlay sorts them itself. */
   players: OverlayPlayer[];
+  /** Translated names of the enemies hit so far; the overlay reads their HP in game. */
+  enemies: OverlayEnemy[];
+};
+
+export type OverlayEnemy = {
+  typeHash: number;
+  name: string;
 };
 
 /** The settings page's meter options, with what the in-game settings menu needs to edit them. */

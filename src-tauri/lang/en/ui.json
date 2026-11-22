@@ -15,6 +15,7 @@
     "tray": {
       "open-logs": "Open Logs",
       "toggle-overlay-meter": "Show In-game Meter",
+      "toggle-overlay-enemy-hp": "Show Enemy HP",
       "toggle-overlay-menu": "Show In-game Settings",
       "reset-windows": "Reset Windows",
       "about": "About",

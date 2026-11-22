@@ -25,15 +25,48 @@ pub enum OverlayMessage {
     Notice(OverlayNotice),
     /// Open or close the in-game menu, e.g. from the tray when no hotkey is usable.
     ToggleMenu,
-    /// Show or hide the in-game meter.
-    ToggleMeter,
+    /// Show or hide one of the in-game windows.
+    ToggleWindow(OverlayWindow),
+}
+
+/// The in-game windows that can be shown or hidden on their own.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OverlayWindow {
+    Meter,
+    EnemyHp,
+}
+
+impl OverlayWindow {
+    /// Every window, in the order the tray and the menu list them.
+    pub const ALL: [OverlayWindow; 2] = [OverlayWindow::Meter, OverlayWindow::EnemyHp];
+
+    /// Id of the window's check item in the tray menu.
+    pub fn tray_id(self) -> &'static str {
+        match self {
+            OverlayWindow::Meter => "toggle_overlay_meter",
+            OverlayWindow::EnemyHp => "toggle_overlay_enemy_hp",
+        }
+    }
+
+    /// Tray label until the translations are loaded.
+    pub fn default_label(self) -> &'static str {
+        match self {
+            OverlayWindow::Meter => "Show In-game Meter",
+            OverlayWindow::EnemyHp => "Show Enemy HP",
+        }
+    }
+
+    pub fn from_tray_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|window| window.tray_id() == id)
+    }
 }
 
 /// What the in-game overlay currently shows, reported to the app so its tray menu can mirror
 /// it with check marks.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct OverlayUiState {
-    pub meter_visible: bool,
+    /// The windows currently shown.
+    pub visible_windows: Vec<OverlayWindow>,
     pub menu_open: bool,
     /// The menu hotkey as shown to the user, e.g. `Ctrl+F8`.
     pub menu_hotkey: String,
@@ -125,6 +158,16 @@ pub struct OverlayState {
     pub settings: OverlaySettings,
     /// Players in party order, already filtered by streamer mode. The overlay sorts them.
     pub players: Vec<OverlayPlayer>,
+    /// Translated names of the enemies hit in this encounter. HP itself is read in game.
+    pub enemies: Vec<OverlayEnemy>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayEnemy {
+    /// Hash ID of the enemy type, as in `Actor::actor_type`.
+    pub type_hash: u32,
+    pub name: String,
 }
 
 /// The settings page's meter options, with what the in-game settings menu needs to edit them.
@@ -294,6 +337,10 @@ mod tests {
                 }],
                 ..Default::default()
             }],
+            enemies: vec![OverlayEnemy {
+                type_hash: 0x1234_5678,
+                name: "Enemy".into(),
+            }],
         };
 
         let bytes = bincode::serialize(&OverlayMessage::State(state.clone())).unwrap();
@@ -306,5 +353,6 @@ mod tests {
         assert_eq!(decoded.settings.column_label(OverlayColumn::Dps), "DPS");
         assert_eq!(decoded.players[0].name, state.players[0].name);
         assert_eq!(decoded.players[0].skills[0].children.len(), 1);
+        assert_eq!(decoded.enemies, state.enemies);
     }
 }

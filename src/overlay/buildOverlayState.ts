@@ -6,6 +6,7 @@ import {
   ComputedSkillState,
   EncounterState,
   MeterColumns,
+  OverlayEnemy,
   OverlayPlayer,
   OverlaySettings,
   OverlaySettingsValues,
@@ -13,7 +14,13 @@ import {
   OverlayState,
   PlayerData,
 } from "@/types";
-import { formatInPartyOrder, getSkillName, resolvePlayerColor, translatedPlayerName } from "@/utils";
+import {
+  formatInPartyOrder,
+  getSkillName,
+  resolvePlayerColor,
+  translateEnemyTypeId,
+  translatedPlayerName,
+} from "@/utils";
 
 const FALLBACK_COLOR = 0xffffff;
 
@@ -181,5 +188,15 @@ export const buildOverlayState = (
     dps: encounterState.dps || 0,
     settings,
     players: rows,
+    enemies: overlayEnemies(encounterState),
   };
+};
+
+/** One name per enemy type hit in the encounter. */
+const overlayEnemies = (encounterState: EncounterState): OverlayEnemy[] => {
+  const hashes = new Set<number>();
+  for (const target of Object.values(encounterState.targets ?? {})) {
+    if (typeof target.rawTargetType === "number") hashes.add(target.rawTargetType >>> 0);
+  }
+  return [...hashes].map((typeHash) => ({ typeHash, name: translateEnemyTypeId(typeHash) }));
 };

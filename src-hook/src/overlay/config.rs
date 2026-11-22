@@ -13,6 +13,8 @@ const FILE_NAME: &str = "overlay.json";
 
 pub const METER_WIDTH_RANGE: (f32, f32) = (240.0, 900.0);
 pub const METER_SCALE_RANGE: (f32, f32) = (0.6, 2.0);
+pub const ENEMY_HP_WIDTH_RANGE: (f32, f32) = (160.0, 900.0);
+pub const ENEMY_HP_COUNT_RANGE: (u32, u32) = (1, 10);
 
 pub fn data_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|dir| dir.join("gbfr-logs-awa"))
@@ -23,6 +25,8 @@ pub fn data_dir() -> Option<PathBuf> {
 pub struct OverlayConfig {
     pub show_meter: bool,
     pub meter: MeterConfig,
+    pub show_enemy_hp: bool,
+    pub enemy_hp: EnemyHpConfig,
     pub font: FontSettings,
     /// Opens and closes the in-game menu.
     pub menu_hotkey: super::hotkey::KeyCombo,
@@ -33,6 +37,8 @@ impl Default for OverlayConfig {
         Self {
             show_meter: true,
             meter: MeterConfig::default(),
+            show_enemy_hp: true,
+            enemy_hp: EnemyHpConfig::default(),
             font: FontSettings::default(),
             menu_hotkey: super::hotkey::KeyCombo::default(),
         }
@@ -81,8 +87,61 @@ impl Default for MeterConfig {
     }
 }
 
+/// The enemy HP window.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct EnemyHpConfig {
+    /// Top-left corner in screen pixels; `None` until the window has been placed.
+    pub position: Option<[f32; 2]>,
+    /// Width of the bars in unscaled pixels.
+    pub width: f32,
+    pub scale: f32,
+    /// How many enemies are listed, biggest max HP first.
+    pub max_enemies: u32,
+}
+
+impl Default for EnemyHpConfig {
+    fn default() -> Self {
+        Self {
+            position: None,
+            width: 360.0,
+            scale: 1.0,
+            max_enemies: 4,
+        }
+    }
+}
+
 impl OverlayConfig {
+    /// Whether an independent window is shown.
+    pub fn window_shown(&self, window: protocol::OverlayWindow) -> &bool {
+        match window {
+            protocol::OverlayWindow::Meter => &self.show_meter,
+            protocol::OverlayWindow::EnemyHp => &self.show_enemy_hp,
+        }
+    }
+
+    pub fn window_shown_mut(&mut self, window: protocol::OverlayWindow) -> &mut bool {
+        match window {
+            protocol::OverlayWindow::Meter => &mut self.show_meter,
+            protocol::OverlayWindow::EnemyHp => &mut self.show_enemy_hp,
+        }
+    }
+
     fn sanitized(mut self) -> Self {
+        let enemy_defaults = EnemyHpConfig::default();
+        let enemy = &mut self.enemy_hp;
+        enemy.width = clamp_or(enemy.width, ENEMY_HP_WIDTH_RANGE, enemy_defaults.width);
+        enemy.scale = clamp_or(enemy.scale, METER_SCALE_RANGE, enemy_defaults.scale);
+        enemy.max_enemies = enemy
+            .max_enemies
+            .clamp(ENEMY_HP_COUNT_RANGE.0, ENEMY_HP_COUNT_RANGE.1);
+        if enemy
+            .position
+            .is_some_and(|[x, y]| !x.is_finite() || !y.is_finite())
+        {
+            enemy.position = None;
+        }
+
         let defaults = MeterConfig::default();
         let meter = &mut self.meter;
         meter.width = clamp_or(meter.width, METER_WIDTH_RANGE, defaults.width);

@@ -130,12 +130,12 @@ impl OverlayFeed {
             .await;
     }
 
-    /// Shows or hides the in-game meter.
-    pub async fn toggle_meter(&self) {
+    /// Shows or hides one of the in-game windows.
+    pub async fn toggle_window(&self, window: protocol::OverlayWindow) {
         self.connection
             .lock()
             .await
-            .send(&OverlayMessage::ToggleMeter)
+            .send(&OverlayMessage::ToggleWindow(window))
             .await;
     }
 }

@@ -106,6 +106,7 @@ impl OnProcessDamageHook {
         super::damage_details::begin_damage(a2);
 
         let original_value = unsafe { ProcessDamageEvent.call(a1, a2, a3, a4) };
+
         let current_stun_value =
             read_applied_stun_value(target_specified_instance_ptr as *const usize);
 
@@ -176,6 +177,7 @@ impl OnProcessDamageHook {
         }
 
         let target_type_id: u32 = actor_type_id(target_specified_instance_ptr as *const usize);
+        super::enemy_hp::observe(target_specified_instance_ptr, target_type_id);
         let target_idx = actor_idx(target_specified_instance_ptr as *const usize);
         let stun_value =
             stun_value_for_event(&action_type, previous_stun_value, current_stun_value);
