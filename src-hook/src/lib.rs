@@ -21,7 +21,22 @@ async fn handle_client(
     mut stream: FramedWrite<SendPipeStream<pipe_mode::Bytes>, LengthDelimitedCodec>,
     mut rx: event::Rx,
 ) -> Result<()> {
-    while let Ok(msg) = rx.recv().await {
+    let mut damage_events: u64 = 0;
+    loop {
+        let msg = match rx.recv().await {
+            Ok(msg) => msg,
+            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                warn!("Pipe client lagged, dropped {skipped} events");
+                continue;
+            }
+            Err(broadcast::error::RecvError::Closed) => break,
+        };
+        if matches!(msg, Message::DamageEvent(_)) {
+            damage_events += 1;
+            if damage_events == 1 || damage_events % 1000 == 0 {
+                info!("Forwarded {damage_events} damage events to the pipe client");
+            }
+        }
         let bytes = protocol::bincode::serialize(&msg)?;
         stream.send(bytes.into()).await?;
     }
@@ -41,28 +56,39 @@ impl Server {
     }
 
     async fn run(&self) {
-        if let Ok(listener) = PipeListenerOptions::new()
+        let listener = match PipeListenerOptions::new()
             .path(protocol::PIPE_NAME)
             .mode(PipeMode::Bytes)
             .accept_remote(false)
             .create_tokio_send_only()
         {
-            loop {
-                let read_pipe = listener.accept().await;
-                match read_pipe {
-                    Ok(stream) => {
-                        let rx = self.tx.subscribe();
-                        hooks::reset_client_identity_emissions();
-                        tokio::spawn(async move {
-                            let encoder = LengthDelimitedCodec::new();
-                            let writer = FramedWrite::new(stream, encoder);
+            Ok(listener) => listener,
+            Err(error) => {
+                warn!("Could not create the named pipe listener: {error:?}");
+                return;
+            }
+        };
+        info!("Named pipe listener ready");
 
-                            let _ = handle_client(writer, rx).await;
-                        });
-                    }
-                    Err(e) => {
-                        warn!("Error accepting client: {:?}", e);
-                    }
+        loop {
+            let read_pipe = listener.accept().await;
+            match read_pipe {
+                Ok(stream) => {
+                    info!("Pipe client connected");
+                    let rx = self.tx.subscribe();
+                    hooks::reset_client_identity_emissions();
+                    tokio::spawn(async move {
+                        let encoder = LengthDelimitedCodec::new();
+                        let writer = FramedWrite::new(stream, encoder);
+
+                        match handle_client(writer, rx).await {
+                            Ok(()) => info!("Pipe client finished"),
+                            Err(error) => info!("Pipe client disconnected: {error}"),
+                        }
+                    });
+                }
+                Err(e) => {
+                    warn!("Error accepting client: {:?}", e);
                 }
             }
         }
