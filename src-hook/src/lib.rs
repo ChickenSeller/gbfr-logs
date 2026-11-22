@@ -12,6 +12,8 @@ use tokio::sync::broadcast;
 
 mod event;
 mod hooks;
+#[cfg(feature = "overlay")]
+mod overlay;
 mod process;
 
 use protocol::Message;
@@ -108,6 +110,9 @@ async fn setup() {
         Ok(_) => info!("Hooks initialized"),
         Err(e) => warn!("Error initializing hooks: {:?}", e),
     }
+
+    #[cfg(feature = "overlay")]
+    overlay::setup();
 
     #[cfg(feature = "console")]
     println!("Hook library initialized");

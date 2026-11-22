@@ -7,6 +7,9 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [features]
+default = ["overlay"]
+# In-game ImGui overlay drawn through a DX11 Present hook.
+overlay = ["dep:hudhook"]
 console = []
 damage-debug = []
 identity-debug = []
@@ -31,6 +34,8 @@ windows = { version = "0.52.0", features = ["Win32_Foundation", "Win32_System_Di
 futures = "0.3"
 protocol = { path = "../protocol" }
 tokio-util = { version = "0.7.11", features = ["codec"] }
+# 0.8.3 is the newest release that builds with the pinned nightly-2024-05-04 (0.9 needs rustc 1.85).
+hudhook = { version = "=0.8.3", default-features = false, features = ["dx11"], optional = true }
 
 
 [build-dependencies]
