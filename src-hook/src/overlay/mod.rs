@@ -187,11 +187,6 @@ impl OverlayRenderLoop {
                     None => "字体: ImGui 默认 (未找到中文字体)".to_string(),
                 });
                 ui.text_disabled("按 Insert 关闭菜单");
-                ui.separator();
-                ui.text_disabled("GBFR Logs, maintained and modified by ChickenSeller.");
-                ui.text_disabled(
-                    "Based on GBFR Logs Awa Edition by onelittlechildawa and GBFR Logs by False Spring.",
-                );
             });
         self.menu_open = open;
     }

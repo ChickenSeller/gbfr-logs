@@ -556,11 +556,13 @@ fn connect_and_run_parser(app: AppHandle) {
 fn system_tray_with_menu() -> SystemTray {
     let logs = CustomMenuItem::new("open_logs", "Open Logs");
     let reset_windows = CustomMenuItem::new("reset_windows", "Reset Windows");
+    let about = CustomMenuItem::new("about", "About");
     let quit = CustomMenuItem::new("quit", "Quit");
 
     let menu = SystemTrayMenu::new()
         .add_item(logs)
         .add_item(reset_windows)
+        .add_item(about)
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(quit);
 
@@ -590,6 +592,7 @@ fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
         }
         SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
             "open_logs" => toggle_window_visibility(handle, "logs", Some(should_focus)),
+            "about" => show_about_window(handle),
             "reset_windows" => {
                 if let Some(window) = handle.get_window("logs") {
                     let _ = window.show();
@@ -610,12 +613,52 @@ fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
     }
 }
 
+/// Brings the logs window back when the app is launched again. Only the logs window: the
+/// About window stays closed unless it is asked for.
 fn show_window(app: &AppHandle) {
-    let windows = app.windows();
-
-    for window in windows.values() {
+    if let Some(window) = app.get_window("logs") {
         let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
     }
+}
+
+/// Shows the About window (version, credits and licence), creating it on first use.
+fn show_about_window(handle: &AppHandle) {
+    if let Some(window) = handle.get_window("about") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        return;
+    }
+
+    // All windows share one WebView2 environment, which cannot be created again with other
+    // browser arguments, so the About window reuses the logs window's.
+    let browser_args = handle
+        .config()
+        .tauri
+        .windows
+        .iter()
+        .find(|window| window.label == "logs")
+        .and_then(|window| window.additional_browser_args.clone());
+
+    // Built off the tray handler: creating a WebView2 window on the event loop thread from an
+    // event callback can deadlock on Windows.
+    let handle = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut builder =
+            tauri::WindowBuilder::new(&handle, "about", tauri::WindowUrl::App("about".into()))
+                .title("About GBFR Logs")
+                .inner_size(560.0, 640.0)
+                .min_inner_size(420.0, 400.0)
+                .center();
+        if let Some(args) = &browser_args {
+            builder = builder.additional_browser_args(args);
+        }
+        if let Err(error) = builder.build() {
+            warn!("Could not open the About window: {error}");
+        }
+    });
 }
 
 fn main() {
