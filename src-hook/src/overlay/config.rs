@@ -23,6 +23,7 @@ pub fn data_dir() -> Option<PathBuf> {
 pub struct OverlayConfig {
     pub show_meter: bool,
     pub meter: MeterConfig,
+    pub font: FontSettings,
 }
 
 impl Default for OverlayConfig {
@@ -30,6 +31,25 @@ impl Default for OverlayConfig {
         Self {
             show_meter: true,
             meter: MeterConfig::default(),
+            font: FontSettings::default(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct FontSettings {
+    /// Font file chosen in the menu; `None` uses the system default (Microsoft YaHei).
+    pub path: Option<String>,
+    /// Glyph size in pixels the atlas is rasterised at.
+    pub size: f32,
+}
+
+impl Default for FontSettings {
+    fn default() -> Self {
+        Self {
+            path: None,
+            size: super::fonts::DEFAULT_FONT_SIZE,
         }
     }
 }
@@ -64,6 +84,15 @@ impl OverlayConfig {
         let meter = &mut self.meter;
         meter.width = clamp_or(meter.width, METER_WIDTH_RANGE, defaults.width);
         meter.scale = clamp_or(meter.scale, METER_SCALE_RANGE, defaults.scale);
+        self.font.size = clamp_or(
+            self.font.size,
+            super::fonts::FONT_SIZE_RANGE,
+            super::fonts::DEFAULT_FONT_SIZE,
+        );
+        if self.font.path.as_deref().is_some_and(str::is_empty) {
+            self.font.path = None;
+        }
+        let meter = &mut self.meter;
         if meter
             .position
             .is_some_and(|[x, y]| !x.is_finite() || !y.is_finite())
