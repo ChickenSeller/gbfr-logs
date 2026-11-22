@@ -6,7 +6,6 @@ use std::{
     fs::File,
     io::Write,
     path::Path,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use anyhow::Context;
@@ -23,7 +22,7 @@ use rusqlite::params_from_iter;
 use serde::{Deserialize, Serialize};
 use tauri::{
     api::dialog::blocking::FileDialogBuilder, AppHandle, CustomMenuItem, LogicalSize, Manager,
-    Size, State, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
+    Size, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
 };
 use tauri_plugin_log::LogTarget;
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
@@ -31,24 +30,8 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::FramedRead;
 
 mod db;
+mod overlay;
 mod parser;
-
-struct AlwaysOnTop(AtomicBool);
-struct ClickThrough(AtomicBool);
-struct DebugMode(AtomicBool);
-
-#[tauri::command]
-fn set_debug_mode(app: AppHandle, state: State<DebugMode>, enabled: bool) {
-    if let Some(window) = app.get_window("logs") {
-        if enabled {
-            window.open_devtools()
-        } else {
-            window.close_devtools()
-        }
-    }
-
-    state.0.store(enabled, Ordering::Release);
-}
 
 #[tauri::command]
 async fn delete_all_logs() -> Result<(), String> {
@@ -457,8 +440,8 @@ async fn check_and_perform_hook(app: AppHandle) {
 
 // Connect to the game hook event channel and listen for damage events.
 fn connect_and_run_parser(app: AppHandle) {
-    let window = app.get_window("main").expect("Window not found");
-    let logs_window = app.get_window("logs").expect("Logs window not found");
+    // The logs window hosts the in-game overlay bridge, so it receives the meter events.
+    let window = app.get_window("logs").expect("Logs window not found");
 
     let database = db::connect_to_db().expect("Could not connect to database");
     let mut state = v1::Parser::new(app.clone(), window.clone(), database);
@@ -490,14 +473,8 @@ fn connect_and_run_parser(app: AppHandle) {
                                     break;
                                 }
 
-                                let debug_mode = app.state::<DebugMode>().0.load(Ordering::Relaxed);
-
                                 match protocol::deserialize_message(&msg) {
                                     Ok(msg) => {
-                                        if debug_mode {
-                                            let _ = logs_window.emit("debug-event", &msg);
-                                        }
-
                                         match msg {
                                         protocol::Message::DamageEvent(event) => {
                                             state.on_damage_event(event);
@@ -531,6 +508,15 @@ fn connect_and_run_parser(app: AppHandle) {
                                         }
                                         protocol::Message::OnBattleEnd => {
                                             state.on_battle_end_event();
+                                        }
+                                        // The meter window owns the export formats; this is
+                                        // UI input, so it never reaches the parser or logs.
+                                        protocol::Message::OverlayCopyRequest(request) => {
+                                            let _ = window.emit("overlay-copy-request", request);
+                                        }
+                                        // In-game settings edits go to the settings store.
+                                        protocol::Message::OverlaySettingsChange(values) => {
+                                            let _ = window.emit("overlay-settings-change", values);
                                         }
                                         }
                                     }
@@ -568,18 +554,12 @@ fn connect_and_run_parser(app: AppHandle) {
 }
 
 fn system_tray_with_menu() -> SystemTray {
-    let meter = CustomMenuItem::new("open_meter", "Open Meter");
     let logs = CustomMenuItem::new("open_logs", "Open Logs");
-    let always_on_top = CustomMenuItem::new("always_on_top", "Always on top ✓");
-    let toggle_clickthrough = CustomMenuItem::new("toggle_clickthrough", "Clickthrough");
     let reset_windows = CustomMenuItem::new("reset_windows", "Reset Windows");
     let quit = CustomMenuItem::new("quit", "Quit");
 
     let menu = SystemTrayMenu::new()
-        .add_item(meter)
         .add_item(logs)
-        .add_item(always_on_top)
-        .add_item(toggle_clickthrough)
         .add_item(reset_windows)
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(quit);
@@ -602,69 +582,15 @@ fn toggle_window_visibility(handle: &AppHandle, id: &str, focus: Option<bool>) {
     }
 }
 
-#[tauri::command]
-fn toggle_always_on_top(window: tauri::Window, state: State<AlwaysOnTop>) {
-    let always_on_top = &state.0;
-    let new_state = !always_on_top.load(Ordering::Acquire);
-    always_on_top.store(new_state, Ordering::Release);
-    window.set_always_on_top(new_state).unwrap();
-    let _ = window.emit("on-pinned", new_state);
-    let _ = window
-        .app_handle()
-        .tray_handle()
-        .get_item("always_on_top")
-        .set_title(if new_state {
-            "Always on top ✓"
-        } else {
-            "Always on top"
-        });
-}
-
-#[tauri::command]
-fn toggle_clickthrough(window: tauri::Window, state: State<ClickThrough>) {
-    let click_through = &state.0;
-    let new_state = !click_through.load(Ordering::Acquire);
-    click_through.store(new_state, Ordering::Release);
-    window.set_ignore_cursor_events(new_state).unwrap();
-    let _ = window.emit("on-clickthrough", new_state);
-    let _ = window
-        .app_handle()
-        .tray_handle()
-        .get_item("toggle_clickthrough")
-        .set_title(if new_state {
-            "Clickthrough ✓"
-        } else {
-            "Clickthrough"
-        });
-}
-
 fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
     let should_focus = true;
     match event {
         SystemTrayEvent::LeftClick { .. } => {
-            toggle_window_visibility(handle, "main", Some(should_focus))
+            toggle_window_visibility(handle, "logs", Some(should_focus))
         }
         SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
-            "open_meter" => toggle_window_visibility(handle, "main", Some(should_focus)),
             "open_logs" => toggle_window_visibility(handle, "logs", Some(should_focus)),
-            "toggle_clickthrough" => toggle_clickthrough(
-                handle.get_window("main").unwrap(),
-                handle.state::<ClickThrough>(),
-            ),
-            "always_on_top" => toggle_always_on_top(
-                handle.get_window("main").unwrap(),
-                handle.state::<AlwaysOnTop>(),
-            ),
             "reset_windows" => {
-                if let Some(window) = handle.get_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_size(Size::Logical(LogicalSize {
-                        width: 500.0,
-                        height: 350.0,
-                    }));
-                }
-
                 if let Some(window) = handle.get_window("logs") {
                     let _ = window.show();
                     let _ = window.unminimize();
@@ -700,6 +626,8 @@ fn main() {
 
     info!("Database setup complete, launching application..");
 
+    let overlay_feed = overlay::OverlayFeed::default();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_window(app);
@@ -712,9 +640,7 @@ fn main() {
                 .level_for("tao", LevelFilter::Error)
                 .build(),
         )
-        .manage(AlwaysOnTop(AtomicBool::new(true)))
-        .manage(ClickThrough(AtomicBool::new(false)))
-        .manage(DebugMode(AtomicBool::new(false)))
+        .manage(overlay_feed.clone())
         .system_tray(system_tray_with_menu())
         .on_system_tray_event(menu_tray_handler)
         .on_window_event(|event| {
@@ -728,13 +654,15 @@ fn main() {
             fetch_logs,
             delete_logs,
             delete_all_logs,
-            toggle_always_on_top,
             export_damage_log_to_file,
-            set_debug_mode,
+            overlay::push_overlay_state,
+            overlay::push_overlay_notice,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             // Perform the game hook check in a separate thread.
             tauri::async_runtime::spawn(check_and_perform_hook(app.handle()));
+            // Pace meter snapshots to the in-game overlay, independent of the meter window.
+            tauri::async_runtime::spawn(overlay_feed.run());
 
             Ok(())
         })

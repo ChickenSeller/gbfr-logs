@@ -204,6 +204,13 @@ export const translatedPlayerName = (
   return `[${partySlotData ? partySlotIndex + 1 : "Guest"}]` + " " + name;
 };
 
+/// Bar colour of a player: the configured colour of their party slot, or a fixed fallback
+/// for guests and slots past the four configurable ones.
+export const resolvePlayerColor = (partyColors: string[], partySlotIndex: number, partyIndex: number): string => {
+  const playerColors = [...partyColors, "#9BCF53", "#380E7F", "#416D19", "#2C568D"];
+  return partySlotIndex !== -1 ? playerColors[partySlotIndex] : playerColors[partyIndex];
+};
+
 export const sortPlayers = (players: ComputedPlayerState[], sortType: SortType, sortDirection: SortDirection) => {
   players.sort((a, b) => {
     if (sortType === MeterColumns.Name) {
@@ -240,14 +247,14 @@ export const openDamageCalculator = (playerData: PlayerData) => {
   open(`https://relink-damage.vercel.app/?logsdata=${data}`);
 };
 
-/// Exports the encounter data to the clipboard in a simple format (CSV)
-export const exportSimpleEncounterToClipboard = (
+/// Builds the simple (CSV) encounter export, or `null` when there is no damage yet.
+export const buildSimpleEncounterText = (
   sortType: SortType,
   sortDirection: SortDirection,
   encounterState: EncounterState,
   partyData: Array<PlayerData | null>
-) => {
-  if (encounterState.totalDamage === 0) return toast.error("Nothing to copy!");
+): string | null => {
+  if (encounterState.totalDamage === 0) return null;
 
   const encounterHeader = "Encounter Time, Total Damage, Total DPS";
   const encounterValues = [
@@ -293,19 +300,33 @@ export const exportSimpleEncounterToClipboard = (
     })
     .join("\n");
 
-  navigator.clipboard.writeText([encounterData, playerHeader, playerData].join("\n")).then(() => {
-    toast.success(t("ui.copied-to-clipboard"));
-  });
+  return [encounterData, playerHeader, playerData].join("\n");
 };
 
-/// Exports the encounter data to the clipboard in a detailed format (CSV)
-export const exportFullEncounterToClipboard = (
+/// Exports the encounter data to the clipboard in a simple format (CSV)
+export const exportSimpleEncounterToClipboard = (
   sortType: SortType,
   sortDirection: SortDirection,
   encounterState: EncounterState,
   partyData: Array<PlayerData | null>
 ) => {
-  if (encounterState.totalDamage === 0) return toast.error("Nothing to copy!");
+  const text = buildSimpleEncounterText(sortType, sortDirection, encounterState, partyData);
+  if (text === null) return toast.error("Nothing to copy!");
+
+  navigator.clipboard.writeText(text).then(() => {
+    toast.success(t("ui.copied-to-clipboard"));
+  });
+};
+
+/// Builds the detailed (CSV) encounter export with skill breakdowns, or `null` when there is
+/// no damage yet.
+export const buildFullEncounterText = (
+  sortType: SortType,
+  sortDirection: SortDirection,
+  encounterState: EncounterState,
+  partyData: Array<PlayerData | null>
+): string | null => {
+  if (encounterState.totalDamage === 0) return null;
 
   const encounterHeader = "Encounter Time, Total Damage, Total DPS";
   const encounterValues = [
@@ -372,7 +393,20 @@ export const exportFullEncounterToClipboard = (
     })
     .join("\n");
 
-  navigator.clipboard.writeText([encounterData, playerData].join("\n")).then(() => {
+  return [encounterData, playerData].join("\n");
+};
+
+/// Exports the encounter data to the clipboard in a detailed format (CSV)
+export const exportFullEncounterToClipboard = (
+  sortType: SortType,
+  sortDirection: SortDirection,
+  encounterState: EncounterState,
+  partyData: Array<PlayerData | null>
+) => {
+  const text = buildFullEncounterText(sortType, sortDirection, encounterState, partyData);
+  if (text === null) return toast.error("Nothing to copy!");
+
+  navigator.clipboard.writeText(text).then(() => {
     toast.success(t("ui.copied-to-clipboard"));
   });
 };

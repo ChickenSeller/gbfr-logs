@@ -3,7 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { useMeterSettingsStore } from "@/stores/useMeterSettingsStore";
 import { ComputedPlayerState, MeterColumns, PlayerData } from "@/types";
-import { humanizeNumbers } from "@/utils";
+import { humanizeNumbers, resolvePlayerColor } from "@/utils";
 
 export type ColumnValue = {
   value: string | number;
@@ -26,9 +26,8 @@ export const usePlayerRow = (live: boolean, player: ComputedPlayerState, partyDa
 
   const [isOpen, setIsOpen] = useState(false);
 
-  const playerColors = [color_1, color_2, color_3, color_4, "#9BCF53", "#380E7F", "#416D19", "#2C568D"];
   const partySlotIndex = partyData.findIndex((partyMember) => partyMember?.actorIndex === player.index);
-  const color = partySlotIndex !== -1 ? playerColors[partySlotIndex] : playerColors[player.partyIndex];
+  const color = resolvePlayerColor([color_1, color_2, color_3, color_4], partySlotIndex, player.partyIndex);
 
   const [totalDamage, totalDamageUnit] = humanizeNumbers(player.totalDamage);
   const [dps, dpsUnit] = humanizeNumbers(player.dps);

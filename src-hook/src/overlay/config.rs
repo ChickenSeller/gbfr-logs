@@ -1,0 +1,145 @@
+//! Overlay settings persisted to `overlay.json` next to the hook's log file.
+//!
+//! Every field has a default and unknown or missing fields fall back to it, so older and newer
+//! files keep loading. Values are clamped on load because the file is user-editable.
+
+use std::path::PathBuf;
+
+use log::{info, warn};
+use protocol::OverlaySort;
+use serde::{Deserialize, Serialize};
+
+const FILE_NAME: &str = "overlay.json";
+
+pub const METER_WIDTH_RANGE: (f32, f32) = (240.0, 900.0);
+pub const METER_SCALE_RANGE: (f32, f32) = (0.6, 2.0);
+
+pub fn data_dir() -> Option<PathBuf> {
+    dirs::data_dir().map(|dir| dir.join("gbfr-logs-awa"))
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct OverlayConfig {
+    pub show_meter: bool,
+    pub meter: MeterConfig,
+}
+
+impl Default for OverlayConfig {
+    fn default() -> Self {
+        Self {
+            show_meter: true,
+            meter: MeterConfig::default(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct MeterConfig {
+    /// Top-left corner in screen pixels; `None` until the window has been placed.
+    pub position: Option<[f32; 2]>,
+    /// Width of the bars in unscaled pixels.
+    pub width: f32,
+    /// Multiplier for text and row sizes.
+    pub scale: f32,
+    /// Column the players are ordered by, chosen by clicking a header.
+    pub sort: OverlaySort,
+}
+
+impl Default for MeterConfig {
+    fn default() -> Self {
+        Self {
+            position: None,
+            width: 505.0,
+            scale: 1.0,
+            sort: OverlaySort::default(),
+        }
+    }
+}
+
+impl OverlayConfig {
+    fn sanitized(mut self) -> Self {
+        let defaults = MeterConfig::default();
+        let meter = &mut self.meter;
+        meter.width = clamp_or(meter.width, METER_WIDTH_RANGE, defaults.width);
+        meter.scale = clamp_or(meter.scale, METER_SCALE_RANGE, defaults.scale);
+        if meter
+            .position
+            .is_some_and(|[x, y]| !x.is_finite() || !y.is_finite())
+        {
+            meter.position = None;
+        }
+        self
+    }
+}
+
+fn clamp_or(value: f32, (min, max): (f32, f32), fallback: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(min, max)
+    } else {
+        fallback
+    }
+}
+
+pub fn load() -> OverlayConfig {
+    let Some(path) = data_dir().map(|dir| dir.join(FILE_NAME)) else {
+        return OverlayConfig::default();
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return OverlayConfig::default();
+    };
+    match serde_json::from_str::<OverlayConfig>(&text) {
+        Ok(config) => config.sanitized(),
+        Err(error) => {
+            warn!("Ignoring unreadable {}: {error}", path.display());
+            OverlayConfig::default()
+        }
+    }
+}
+
+/// Writes the config on a background thread so the render thread never waits on disk.
+/// The file is replaced atomically so a crash cannot leave it half-written.
+pub fn save(config: &OverlayConfig) {
+    let Some(dir) = data_dir() else {
+        return;
+    };
+    let Ok(text) = serde_json::to_string_pretty(config) else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let path = dir.join(FILE_NAME);
+        let temp = dir.join(format!("{FILE_NAME}.tmp"));
+        let result = std::fs::create_dir_all(&dir)
+            .and_then(|()| std::fs::write(&temp, text))
+            .and_then(|()| std::fs::rename(&temp, &path));
+        match result {
+            Ok(()) => info!("Overlay settings saved"),
+            Err(error) => warn!("Could not save {}: {error}", path.display()),
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_fields_use_defaults() {
+        let config: OverlayConfig = serde_json::from_str(r#"{"meter":{"width":500}}"#).unwrap();
+        assert!(config.show_meter);
+        assert_eq!(config.meter.width, 500.0);
+        assert_eq!(config.meter.scale, 1.0);
+        assert_eq!(config.meter.position, None);
+    }
+
+    #[test]
+    fn out_of_range_values_are_clamped() {
+        let config: OverlayConfig =
+            serde_json::from_str(r#"{"meter":{"width":5,"scale":10,"position":[10,20]}}"#).unwrap();
+        let config = config.sanitized();
+        assert_eq!(config.meter.width, METER_WIDTH_RANGE.0);
+        assert_eq!(config.meter.scale, METER_SCALE_RANGE.1);
+        assert_eq!(config.meter.position, Some([10.0, 20.0]));
+    }
+}

@@ -27,6 +27,9 @@ use std::{
 
 pub use bincode;
 
+mod overlay;
+pub use overlay::*;
+
 use serde::{Deserialize, Serialize};
 
 pub const PIPE_NAME: &str = r"\\.\pipe\gbfr-logs";
@@ -285,6 +288,13 @@ pub enum Message {
     OnBattleEnd,
     /// Player name and actor mapping without version-sensitive equipment data.
     PlayerIdentityEvent(PlayerIdentityEvent),
+    /// The player pressed a copy button in the in-game overlay. Handled by the app's UI and
+    /// never stored in encounter logs. Must stay after every logged variant: bincode encodes
+    /// the variant index.
+    OverlayCopyRequest(OverlayCopyRequest),
+    /// The player changed meter settings in the in-game menu. Applied to the settings page's
+    /// store and, like the copy request, never logged.
+    OverlaySettingsChange(OverlaySettingsValues),
 }
 
 /// Damage event layout used through Awa Edition 1.8.4.

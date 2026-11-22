@@ -5,13 +5,14 @@ import { useMeterSettingsStore } from "@/stores/useMeterSettingsStore";
 import { ComputedPlayerState, ComputedSkillGroup, ComputedSkillState } from "@/types";
 import { getSkillName } from "@/utils";
 
-export const useSkillBreakdown = (player: ComputedPlayerState) => {
-  const { useCondensedSkills } = useMeterSettingsStore(
-    useShallow((state) => ({
-      useCondensedSkills: state.use_condensed_skills,
-    }))
-  );
-
+/**
+ * The rows of a player's skill breakdown, most damage first. With `useCondensedSkills`, skills
+ * that belong to a known group are merged into one row that keeps them in `skills`.
+ */
+export const computeSkillBreakdown = (
+  player: ComputedPlayerState,
+  useCondensedSkills: boolean
+): Array<ComputedSkillGroup | ComputedSkillState> => {
   const totalDamage = player.skillBreakdown.reduce((acc, skill) => acc + skill.totalDamage, 0);
   const computedSkills = player.skillBreakdown.map<ComputedSkillState>((skill) => {
     return {
@@ -97,7 +98,17 @@ export const useSkillBreakdown = (player: ComputedPlayerState) => {
 
   skillsToShow.sort((a, b) => b.totalDamage - a.totalDamage);
 
+  return skillsToShow;
+};
+
+export const useSkillBreakdown = (player: ComputedPlayerState) => {
+  const { useCondensedSkills } = useMeterSettingsStore(
+    useShallow((state) => ({
+      useCondensedSkills: state.use_condensed_skills,
+    }))
+  );
+
   return {
-    skills: skillsToShow,
+    skills: computeSkillBreakdown(player, useCondensedSkills),
   };
 };

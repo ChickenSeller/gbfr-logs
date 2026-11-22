@@ -1,0 +1,111 @@
+//! Receives meter snapshots from the desktop app over [`protocol::OVERLAY_PIPE_NAME`].
+//!
+//! The pipe task stores the newest snapshot; the render thread copies it with `try_lock` and
+//! keeps drawing its previous copy when the lock is busy, so it never waits on the pipe.
+
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use futures::StreamExt;
+use interprocess::os::windows::named_pipe::tokio::PipeListenerOptionsExt;
+use interprocess::os::windows::named_pipe::{PipeListenerOptions, PipeMode};
+use log::{info, warn};
+use protocol::{OverlayMessage, OverlayNotice, OverlayState};
+use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
+
+struct Latest {
+    state: OverlayState,
+    /// Bumped on every update so the render thread only clones changed snapshots.
+    revision: u64,
+}
+
+static LATEST: Mutex<Option<Latest>> = Mutex::new(None);
+static NOTICE: Mutex<Option<(OverlayNotice, Instant)>> = Mutex::new(None);
+
+/// Snapshot held by the render thread.
+pub struct Snapshot {
+    pub state: OverlayState,
+    revision: u64,
+}
+
+/// Starts the pipe server. Must be called from inside the hook's tokio runtime.
+pub fn spawn() {
+    tokio::spawn(async {
+        let listener = match PipeListenerOptions::new()
+            .path(protocol::OVERLAY_PIPE_NAME)
+            .mode(PipeMode::Bytes)
+            .accept_remote(false)
+            .create_tokio_recv_only()
+        {
+            Ok(listener) => listener,
+            Err(error) => {
+                warn!("Could not create the overlay pipe listener: {error:?}");
+                return;
+            }
+        };
+
+        loop {
+            match listener.accept().await {
+                Ok(stream) => {
+                    info!("Overlay feed connected");
+                    tokio::spawn(async move {
+                        let mut frames = FramedRead::new(stream, LengthDelimitedCodec::new());
+                        while let Some(Ok(frame)) = frames.next().await {
+                            match protocol::bincode::deserialize::<OverlayMessage>(&frame) {
+                                Ok(OverlayMessage::State(state)) => store(state),
+                                Ok(OverlayMessage::Notice(notice)) => store_notice(notice),
+                                Err(error) => warn!("Bad overlay message: {error}"),
+                            }
+                        }
+                        info!("Overlay feed disconnected");
+                    });
+                }
+                Err(error) => {
+                    warn!("Error accepting overlay feed: {error:?}");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+    });
+}
+
+fn store(state: OverlayState) {
+    let mut latest = LATEST
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let revision = latest.as_ref().map_or(1, |latest| latest.revision + 1);
+    *latest = Some(Latest { state, revision });
+}
+
+fn store_notice(notice: OverlayNotice) {
+    *NOTICE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((notice, Instant::now()));
+}
+
+/// The newest notice if it arrived within `max_age`. Never blocks.
+pub fn notice(max_age: Duration) -> Option<OverlayNotice> {
+    let notice = NOTICE.try_lock().ok()?;
+    let (notice, received) = notice.as_ref()?;
+    (received.elapsed() <= max_age).then(|| notice.clone())
+}
+
+/// Refreshes `snapshot` from the newest state without blocking.
+pub fn refresh(snapshot: &mut Option<Snapshot>) {
+    let Ok(latest) = LATEST.try_lock() else {
+        return;
+    };
+    let Some(latest) = latest.as_ref() else {
+        return;
+    };
+    if snapshot
+        .as_ref()
+        .is_some_and(|current| current.revision == latest.revision)
+    {
+        return;
+    }
+    *snapshot = Some(Snapshot {
+        state: latest.state.clone(),
+        revision: latest.revision,
+    });
+}

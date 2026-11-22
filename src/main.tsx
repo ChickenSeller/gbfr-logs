@@ -7,6 +7,7 @@ import "./styles.css";
 
 import { ModalsProvider } from "@mantine/modals";
 import { App } from "./App";
+import "./i18n";
 
 const theme = createTheme({
   fontFamily: '"Noto Sans Variable", Inter, Avenir, Helvetica, Arial, sans-serif',

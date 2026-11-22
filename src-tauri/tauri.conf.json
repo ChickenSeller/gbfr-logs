@@ -12,6 +12,9 @@
   "tauri": {
     "allowlist": {
       "all": false,
+      "clipboard": {
+        "writeText": true
+      },
       "shell": {
         "all": false,
         "open": true
@@ -37,20 +40,6 @@
     },
     "windows": [
       {
-        "title": "GBFR Logs Awa Edition - Meter",
-        "label": "main",
-        "fullscreen": false,
-        "width": 500,
-        "height": 350,
-        "resizable": true,
-        "decorations": false,
-        "transparent": true,
-        "minWidth": 250,
-        "minHeight": 120,
-        "alwaysOnTop": true,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu"
-      },
-      {
         "title": "GBFR Logs Awa Edition - Logs",
         "label": "logs",
         "url": "/logs",
@@ -62,7 +51,7 @@
         "resizable": true,
         "closable": true,
         "decorations": true,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"
       }
     ],
     "security": {

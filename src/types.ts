@@ -175,6 +175,98 @@ export type EncounterState = {
   targets: Record<number, EnemyState>;
 };
 
+/** Display-ready meter snapshot sent to the in-game overlay (`protocol::OverlayState`). */
+export type OverlayState = {
+  status: EncounterStatus;
+  startTime: number;
+  endTime: number;
+  totalDamage: number;
+  dps: number;
+  settings: OverlaySettings;
+  /** Party order; the overlay sorts them itself. */
+  players: OverlayPlayer[];
+};
+
+/** The settings page's meter options, with what the in-game settings menu needs to edit them. */
+export type OverlaySettings = {
+  values: OverlaySettingsValues;
+  languages: Array<{ value: string; label: string }>;
+  /** Every value column with its translated header and description. */
+  columns: Array<{ column: MeterColumns; label: string; description: string }>;
+  labels: OverlaySettingsLabels;
+};
+
+/** Editable values; the overlay sends them back when they change in game. */
+export type OverlaySettingsValues = {
+  language: string;
+  /** Party slot 1-4 colours as 0xRRGGBB. */
+  partyColors: number[];
+  transparency: number;
+  showDisplayNames: boolean;
+  streamerMode: boolean;
+  showFullValues: boolean;
+  useCondensedSkills: boolean;
+  openLogOnSave: boolean;
+  columns: MeterColumns[];
+};
+
+export type OverlaySettingsLabels = {
+  title: string;
+  language: string;
+  partyColors: string[];
+  transparency: string;
+  showDisplayNames: string;
+  streamerMode: string;
+  streamerModeDescription: string;
+  showFullValues: string;
+  showFullValuesDescription: string;
+  useCondensedSkills: string;
+  useCondensedSkillsDescription: string;
+  openLogOnSave: string;
+  openLogOnSaveDescription: string;
+  columns: string;
+};
+
+export type OverlayPlayer = {
+  /** Actor index; identifies the row while it is expanded. */
+  index: number;
+  partyOrder: number;
+  /** Name exactly as the meter shows it. */
+  name: string;
+  /** Bar colour as 0xRRGGBB. */
+  color: number;
+  totalDamage: number;
+  dps: number;
+  percentage: number;
+  sba: number;
+  totalStunValue: number;
+  stunPerSecond: number;
+  skills: OverlaySkill[];
+};
+
+export type OverlaySkill = {
+  name: string;
+  hits: number;
+  totalDamage: number;
+  minDamage: number | null;
+  maxDamage: number | null;
+  percentage: number;
+  /** Skills inside a condensed group. */
+  children: OverlaySkill[];
+};
+
+/** Mirrors `protocol::OverlayNotice`. */
+export type OverlayNotice = {
+  text: string;
+  level: "Success" | "Error";
+};
+
+/** Mirrors `protocol::OverlayCopyRequest`: which export, in the overlay's sort order. */
+export type OverlayCopyRequest = {
+  kind: "Simple" | "Full";
+  sort: { column: MeterColumns; descending: boolean };
+};
+
 export type EncounterUpdateEvent = {
   event: string;
   payload: EncounterState;

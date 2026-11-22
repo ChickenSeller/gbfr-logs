@@ -112,7 +112,7 @@ async fn setup() {
     }
 
     #[cfg(feature = "overlay")]
-    overlay::setup();
+    overlay::setup(server.tx.clone());
 
     #[cfg(feature = "console")]
     println!("Hook library initialized");

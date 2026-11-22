@@ -89,3 +89,22 @@ fn compatibility_decoder_preserves_current_damage_details() {
     assert_eq!(event.stun_value, Some(12.5));
     assert!(event.details.is_some());
 }
+
+#[test]
+fn overlay_copy_request_keeps_existing_variant_indices() {
+    // Logged variants must keep their bincode indices; the overlay request is appended last.
+    let battle_end = protocol::bincode::serialize(&Message::OnBattleEnd).unwrap();
+    assert_eq!(battle_end, 9u32.to_le_bytes());
+
+    let request = Message::OverlayCopyRequest(protocol::OverlayCopyRequest {
+        kind: protocol::OverlayCopyKind::Full,
+        sort: protocol::OverlaySort::default(),
+    });
+    let bytes = protocol::bincode::serialize(&request).unwrap();
+    let decoded = protocol::deserialize_message(&bytes).unwrap();
+    let Message::OverlayCopyRequest(decoded) = decoded else {
+        panic!("decoded a different message");
+    };
+    assert_eq!(decoded.kind, protocol::OverlayCopyKind::Full);
+    assert!(decoded.sort.descending);
+}

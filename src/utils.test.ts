@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { getSkillTranslationKeys, toHash, toHashString } from "./utils";
+import { EncounterState, MeterColumns } from "./types";
+import {
+  buildFullEncounterText,
+  buildSimpleEncounterText,
+  getSkillTranslationKeys,
+  toHash,
+  toHashString,
+} from "./utils";
 
 describe("utils", () => {
   it("toHash", () => {
@@ -45,5 +52,40 @@ describe("utils", () => {
     expect(getSkillTranslationKeys("Pl2800", 1110)).toEqual(["skills.Pl2800.1110"]);
     expect(getSkillTranslationKeys("Pl2300", 1510)).toEqual(["skills.Pl2300.1510"]);
     expect(getSkillTranslationKeys({ Unknown: 123 }, 1101)).toEqual([]);
+  });
+});
+
+describe("encounter text exports", () => {
+  const encounter = {
+    totalDamage: 0,
+    dps: 0,
+    startTime: 0,
+    endTime: 1000,
+    party: {},
+    status: "Stopped",
+    targets: {},
+  } as EncounterState;
+
+  it("returns null when there is nothing to copy", () => {
+    expect(buildSimpleEncounterText(MeterColumns.TotalDamage, "desc", encounter, [])).toBeNull();
+    expect(buildFullEncounterText(MeterColumns.TotalDamage, "desc", encounter, [])).toBeNull();
+  });
+
+  it("starts the simple export with the encounter summary", () => {
+    const withDamage = {
+      ...encounter,
+      totalDamage: 1000,
+      dps: 1000,
+      party: {
+        "0": { index: 0, characterType: "Pl0000", totalDamage: 1000, dps: 1000, skillBreakdown: [] },
+      },
+    } as unknown as EncounterState;
+
+    const text = buildSimpleEncounterText(MeterColumns.TotalDamage, "desc", withDamage, []);
+    expect(text?.split("\n").slice(0, 3)).toEqual([
+      "Encounter Time, Total Damage, Total DPS",
+      "00:01, 1000, 1000",
+      "Name, DMG, DPS, %",
+    ]);
   });
 });
