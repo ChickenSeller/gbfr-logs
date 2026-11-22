@@ -13,6 +13,8 @@ export const NativeLabels = () => {
   useEffect(() => {
     const labels = {
       openLogs: t("ui.tray.open-logs"),
+      toggleOverlayMeter: t("ui.tray.toggle-overlay-meter"),
+      toggleOverlayMenu: t("ui.tray.toggle-overlay-menu"),
       resetWindows: t("ui.tray.reset-windows"),
       about: t("ui.tray.about"),
       quit: t("ui.tray.quit"),

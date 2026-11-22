@@ -3,6 +3,7 @@
 //! The pipe task stores the newest snapshot; the render thread copies it with `try_lock` and
 //! keeps drawing its previous copy when the lock is busy, so it never waits on the pipe.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -54,6 +55,12 @@ pub fn spawn() {
                             match protocol::bincode::deserialize::<OverlayMessage>(&frame) {
                                 Ok(OverlayMessage::State(state)) => store(state),
                                 Ok(OverlayMessage::Notice(notice)) => store_notice(notice),
+                                Ok(OverlayMessage::ToggleMenu) => {
+                                    MENU_TOGGLE.store(true, Ordering::Relaxed)
+                                }
+                                Ok(OverlayMessage::ToggleMeter) => {
+                                    METER_TOGGLE.store(true, Ordering::Relaxed)
+                                }
                                 Err(error) => warn!("Bad overlay message: {error}"),
                             }
                         }
@@ -75,6 +82,22 @@ fn store(state: OverlayState) {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let revision = latest.as_ref().map_or(1, |latest| latest.revision + 1);
     *latest = Some(Latest { state, revision });
+}
+
+/// Set by the app (tray menu) to open or close the in-game menu.
+static MENU_TOGGLE: AtomicBool = AtomicBool::new(false);
+
+/// Whether the app asked to toggle the menu since the last call.
+pub fn take_menu_toggle() -> bool {
+    MENU_TOGGLE.swap(false, Ordering::Relaxed)
+}
+
+/// Set by the app (tray menu) to show or hide the meter.
+static METER_TOGGLE: AtomicBool = AtomicBool::new(false);
+
+/// Whether the app asked to toggle the meter since the last call.
+pub fn take_meter_toggle() -> bool {
+    METER_TOGGLE.swap(false, Ordering::Relaxed)
 }
 
 fn store_notice(notice: OverlayNotice) {

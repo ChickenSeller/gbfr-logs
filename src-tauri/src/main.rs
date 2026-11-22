@@ -518,6 +518,9 @@ fn connect_and_run_parser(app: AppHandle) {
                                         protocol::Message::OverlaySettingsChange(values) => {
                                             let _ = window.emit("overlay-settings-change", values);
                                         }
+                                        protocol::Message::OverlayUiState(ui_state) => {
+                                            apply_overlay_ui_state(&app, ui_state);
+                                        }
                                         }
                                     }
                                     Err(error) => {
@@ -555,12 +558,18 @@ fn connect_and_run_parser(app: AppHandle) {
 
 fn system_tray_with_menu() -> SystemTray {
     let logs = CustomMenuItem::new("open_logs", "Open Logs");
+    let overlay_meter =
+        CustomMenuItem::new("toggle_overlay_meter", TOGGLE_OVERLAY_METER_DEFAULT).selected();
+    let overlay_menu =
+        CustomMenuItem::new("toggle_overlay_menu", TOGGLE_OVERLAY_MENU_DEFAULT).selected();
     let reset_windows = CustomMenuItem::new("reset_windows", "Reset Windows");
     let about = CustomMenuItem::new("about", "About");
     let quit = CustomMenuItem::new("quit", "Quit");
 
     let menu = SystemTrayMenu::new()
         .add_item(logs)
+        .add_item(overlay_meter)
+        .add_item(overlay_menu)
         .add_item(reset_windows)
         .add_item(about)
         .add_native_item(SystemTrayMenuItem::Separator)
@@ -575,6 +584,8 @@ fn system_tray_with_menu() -> SystemTray {
 #[serde(rename_all = "camelCase")]
 struct NativeLabels {
     open_logs: String,
+    toggle_overlay_meter: String,
+    toggle_overlay_menu: String,
     reset_windows: String,
     about: String,
     quit: String,
@@ -586,13 +597,73 @@ struct NativeLabels {
 #[derive(Default)]
 struct AboutTitle(std::sync::Mutex<Option<String>>);
 
+/// Pieces of the "show in-game settings" tray label, which combines the translated text with
+/// the hotkey reported by the overlay; either can change on its own.
+struct OverlayMenuLabel(std::sync::Mutex<(String, Option<String>)>);
+
+impl Default for OverlayMenuLabel {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new((
+            TOGGLE_OVERLAY_MENU_DEFAULT.to_string(),
+            None,
+        )))
+    }
+}
+
+const TOGGLE_OVERLAY_METER_DEFAULT: &str = "Show In-game Meter";
+const TOGGLE_OVERLAY_MENU_DEFAULT: &str = "Show In-game Settings";
+
+/// Updates the overlay menu tray item from its stored text and hotkey.
+fn refresh_overlay_menu_label(app: &AppHandle) {
+    let state = app.state::<OverlayMenuLabel>();
+    let (text, hotkey) = state.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let title = match hotkey {
+        Some(hotkey) => format!("{text} ({hotkey})"),
+        None => text,
+    };
+    let _ = app
+        .tray_handle()
+        .get_item("toggle_overlay_menu")
+        .set_title(title);
+}
+
+/// Mirrors the in-game overlay in the tray: check marks and the menu hotkey.
+fn apply_overlay_ui_state(app: &AppHandle, ui_state: protocol::OverlayUiState) {
+    let tray = app.tray_handle();
+    let _ = tray
+        .get_item("toggle_overlay_meter")
+        .set_selected(ui_state.meter_visible);
+    let _ = tray
+        .get_item("toggle_overlay_menu")
+        .set_selected(ui_state.menu_open);
+
+    let changed = {
+        let label = app.state::<OverlayMenuLabel>();
+        let mut label = label.0.lock().unwrap_or_else(|e| e.into_inner());
+        let changed = label.1.as_deref() != Some(ui_state.menu_hotkey.as_str());
+        label.1 = Some(ui_state.menu_hotkey);
+        changed
+    };
+    if changed {
+        refresh_overlay_menu_label(app);
+    }
+}
+
 /// The tray menu and window titles exist before any translation is loaded, so they start in
 /// English and are relabelled from the front-end, which owns the language setting.
 #[tauri::command]
 fn set_native_labels(app: AppHandle, about_title: State<AboutTitle>, labels: NativeLabels) {
     let tray = app.tray_handle();
+    app.state::<OverlayMenuLabel>()
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .0 = labels.toggle_overlay_menu;
+    refresh_overlay_menu_label(&app);
+
     for (id, title) in [
         ("open_logs", labels.open_logs),
+        ("toggle_overlay_meter", labels.toggle_overlay_meter),
         ("reset_windows", labels.reset_windows),
         ("about", labels.about),
         ("quit", labels.quit),
@@ -633,6 +704,14 @@ fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
         SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
             "open_logs" => toggle_window_visibility(handle, "logs", Some(should_focus)),
             "about" => show_about_window(handle),
+            "toggle_overlay_menu" => {
+                let feed = handle.state::<overlay::OverlayFeed>().inner().clone();
+                tauri::async_runtime::spawn(async move { feed.toggle_menu().await });
+            }
+            "toggle_overlay_meter" => {
+                let feed = handle.state::<overlay::OverlayFeed>().inner().clone();
+                tauri::async_runtime::spawn(async move { feed.toggle_meter().await });
+            }
             "reset_windows" => {
                 if let Some(window) = handle.get_window("logs") {
                     let _ = window.show();
@@ -733,6 +812,7 @@ fn main() {
         )
         .manage(overlay_feed.clone())
         .manage(AboutTitle::default())
+        .manage(OverlayMenuLabel::default())
         .system_tray(system_tray_with_menu())
         .on_system_tray_event(menu_tray_handler)
         .on_window_event(|event| {

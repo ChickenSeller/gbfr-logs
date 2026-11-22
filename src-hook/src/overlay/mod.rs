@@ -5,19 +5,20 @@
 //! from shared state without blocking.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::imgui::{self, Condition, WindowFlags};
-use hudhook::windows::Win32::UI::Input::KeyboardAndMouse::VK_INSERT;
 use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter, RenderContext};
 use log::{info, warn};
-use protocol::OverlaySettings;
+use protocol::{Message, OverlaySettings, OverlayUiState};
 
 mod config;
 mod cursor;
 mod dinput;
 mod feed;
 mod fonts;
+mod hotkey;
 mod keyboard;
 mod message_loop;
 mod meter;
@@ -76,30 +77,6 @@ pub fn setup(tx: crate::event::Tx) {
     }
 }
 
-/// Edge-triggered hotkey polled every frame. Polling avoids depending on the game's window
-/// messages, which may be consumed by its own input layer.
-struct Hotkey {
-    vk: i32,
-    was_down: bool,
-}
-
-impl Hotkey {
-    const fn new(vk: i32) -> Self {
-        Self {
-            vk,
-            was_down: false,
-        }
-    }
-
-    fn pressed(&mut self) -> bool {
-        // Bypass the overlay's own keyboard blocking, which is active while the menu is open.
-        let down = keyboard::real_async_key_state(self.vk) as u16 & 0x8000 != 0;
-        let pressed = down && !self.was_down;
-        self.was_down = down;
-        pressed
-    }
-}
-
 /// In-game font selection. Changes are applied by rebuilding the atlas before a frame.
 #[derive(Default)]
 struct FontState {
@@ -117,9 +94,18 @@ struct FontState {
     browse: Option<fonts::FontBrowser>,
 }
 
+/// How often the overlay state is re-sent even without changes, so an app that connected later
+/// still learns it.
+const UI_STATE_RESEND: Duration = Duration::from_secs(2);
+
 struct OverlayRenderLoop {
     menu_open: bool,
-    menu_hotkey: Hotkey,
+    /// Reports the overlay state to the app (tray check marks).
+    tx: crate::event::Tx,
+    last_ui_state: Option<(OverlayUiState, Instant)>,
+    menu_hotkey: hotkey::HotkeyWatcher,
+    /// Recording a new menu hotkey.
+    key_capture: Option<hotkey::KeyCapture>,
     font: FontState,
     meter: meter::MeterWindow,
     settings_editor: settings_menu::SettingsEditor,
@@ -134,8 +120,12 @@ impl OverlayRenderLoop {
     fn new(tx: crate::event::Tx) -> Self {
         let config = config::load();
         Self {
-            menu_open: false,
-            menu_hotkey: Hotkey::new(VK_INSERT.0 as i32),
+            // Open on start, so the menu (and its hotkey) is easy to discover.
+            menu_open: true,
+            tx: tx.clone(),
+            last_ui_state: None,
+            menu_hotkey: hotkey::HotkeyWatcher::default(),
+            key_capture: None,
             font: FontState {
                 size_draft: config.font.size,
                 ..FontState::default()
@@ -166,6 +156,8 @@ impl OverlayRenderLoop {
             .flags(WindowFlags::ALWAYS_AUTO_RESIZE)
             .opened(&mut open)
             .build(|| {
+                self.render_hotkey_settings(ui);
+                ui.separator();
                 ui.checkbox("显示伤害统计", &mut self.config.show_meter);
                 self.render_meter_settings(ui);
                 ui.separator();
@@ -173,7 +165,10 @@ impl OverlayRenderLoop {
                 ui.separator();
                 self.render_font_settings(ui);
                 ui.separator();
-                ui.text_disabled("按 Insert 关闭菜单");
+                ui.text_disabled(format!(
+                    "按 {} 关闭菜单，也可在托盘菜单中打开/关闭",
+                    self.config.menu_hotkey.label()
+                ));
             });
         self.menu_open = open;
     }
@@ -197,6 +192,23 @@ impl OverlayRenderLoop {
             self.meter.reset_position();
         }
         ui.text_disabled("菜单打开时可直接拖动伤害统计窗口");
+    }
+
+    /// Shows the menu hotkey and lets the user record a new one.
+    fn render_hotkey_settings(&mut self, ui: &imgui::Ui) {
+        ui.text(format!("菜单快捷键: {}", self.config.menu_hotkey.label()));
+        ui.same_line();
+        if self.key_capture.is_some() {
+            if ui.button("取消") {
+                self.key_capture = None;
+            }
+            ui.text_colored(
+                [1.0, 0.85, 0.4, 1.0],
+                "请按下新的快捷键（可加 Ctrl/Shift/Alt，Esc 取消）",
+            );
+        } else if ui.button("更改") {
+            self.key_capture = Some(hotkey::KeyCapture::start());
+        }
     }
 
     /// Font picker: system/user font files, a file browser and the glyph size.
@@ -318,6 +330,24 @@ impl OverlayRenderLoop {
         }
     }
 
+    /// Sends the visible state to the app when it changes, and periodically so a newly
+    /// connected app catches up.
+    fn report_ui_state(&mut self) {
+        let state = OverlayUiState {
+            meter_visible: self.config.show_meter,
+            menu_open: self.menu_open,
+            menu_hotkey: self.config.menu_hotkey.label(),
+        };
+        let due = self.last_ui_state.as_ref().map_or(true, |(last, sent)| {
+            *last != state || sent.elapsed() >= UI_STATE_RESEND
+        });
+        if due {
+            // Fails only while no app is connected.
+            let _ = self.tx.send(Message::OverlayUiState(state.clone()));
+            self.last_ui_state = Some((state, Instant::now()));
+        }
+    }
+
     /// Settings only change while the menu is open, so saving once it is closed writes each
     /// round of edits a single time.
     fn save_if_changed(&mut self) {
@@ -353,8 +383,30 @@ impl ImguiRenderLoop for OverlayRenderLoop {
         if std::mem::take(&mut self.font.reload) {
             self.rebuild_fonts(ctx, render_context);
         }
-        if self.menu_hotkey.pressed() {
+        if let Some(capture) = &mut self.key_capture {
+            match capture.poll() {
+                Some(hotkey::CaptureResult::Captured(combo)) => {
+                    self.config.menu_hotkey = combo;
+                    // The new key is still down; don't let it close the menu right away.
+                    self.menu_hotkey.suppress_until_released();
+                    self.key_capture = None;
+                }
+                Some(hotkey::CaptureResult::Cancelled) => self.key_capture = None,
+                None => {}
+            }
+        } else if self.menu_hotkey.pressed(&self.config.menu_hotkey) {
             self.menu_open = !self.menu_open;
+        }
+        // The tray menu can toggle both, e.g. for keyboards without the hotkey.
+        if feed::take_menu_toggle() {
+            self.menu_open = !self.menu_open;
+            self.key_capture = None;
+        }
+        if feed::take_meter_toggle() {
+            self.config.show_meter = !self.config.show_meter;
+        }
+        if !self.menu_open {
+            self.key_capture = None;
         }
         // Also covers the menu being closed through its title-bar button during `render`.
         cursor::set_captured(self.menu_open);
@@ -387,6 +439,7 @@ impl ImguiRenderLoop for OverlayRenderLoop {
             self.render_menu(ui, settings.as_ref());
         }
         self.save_if_changed();
+        self.report_ui_state();
     }
 
     fn message_filter(&self, _io: &imgui::Io) -> MessageFilter {

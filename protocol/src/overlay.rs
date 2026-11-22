@@ -23,6 +23,20 @@ pub enum OverlayMessage {
     State(OverlayState),
     /// Short status line shown briefly in the overlay (saves, copy results, alerts).
     Notice(OverlayNotice),
+    /// Open or close the in-game menu, e.g. from the tray when no hotkey is usable.
+    ToggleMenu,
+    /// Show or hide the in-game meter.
+    ToggleMeter,
+}
+
+/// What the in-game overlay currently shows, reported to the app so its tray menu can mirror
+/// it with check marks.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct OverlayUiState {
+    pub meter_visible: bool,
+    pub menu_open: bool,
+    /// The menu hotkey as shown to the user, e.g. `Ctrl+F8`.
+    pub menu_hotkey: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

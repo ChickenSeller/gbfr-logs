@@ -24,6 +24,8 @@ pub struct OverlayConfig {
     pub show_meter: bool,
     pub meter: MeterConfig,
     pub font: FontSettings,
+    /// Opens and closes the in-game menu.
+    pub menu_hotkey: super::hotkey::KeyCombo,
 }
 
 impl Default for OverlayConfig {
@@ -32,6 +34,7 @@ impl Default for OverlayConfig {
             show_meter: true,
             meter: MeterConfig::default(),
             font: FontSettings::default(),
+            menu_hotkey: super::hotkey::KeyCombo::default(),
         }
     }
 }
@@ -89,6 +92,9 @@ impl OverlayConfig {
             super::fonts::FONT_SIZE_RANGE,
             super::fonts::DEFAULT_FONT_SIZE,
         );
+        if !self.menu_hotkey.is_valid() {
+            self.menu_hotkey = super::hotkey::KeyCombo::default();
+        }
         if self.font.path.as_deref().is_some_and(str::is_empty) {
             self.font.path = None;
         }

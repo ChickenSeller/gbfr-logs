@@ -295,6 +295,8 @@ pub enum Message {
     /// The player changed meter settings in the in-game menu. Applied to the settings page's
     /// store and, like the copy request, never logged.
     OverlaySettingsChange(OverlaySettingsValues),
+    /// The overlay's visible state, for the app's tray menu. Never logged.
+    OverlayUiState(OverlayUiState),
 }
 
 /// Damage event layout used through Awa Edition 1.8.4.

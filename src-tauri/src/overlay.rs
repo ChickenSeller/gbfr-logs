@@ -120,6 +120,26 @@ impl OverlayFeed {
     }
 }
 
+impl OverlayFeed {
+    /// Opens or closes the in-game menu, for keyboards without the configured hotkey.
+    pub async fn toggle_menu(&self) {
+        self.connection
+            .lock()
+            .await
+            .send(&OverlayMessage::ToggleMenu)
+            .await;
+    }
+
+    /// Shows or hides the in-game meter.
+    pub async fn toggle_meter(&self) {
+        self.connection
+            .lock()
+            .await
+            .send(&OverlayMessage::ToggleMeter)
+            .await;
+    }
+}
+
 #[tauri::command]
 pub fn push_overlay_state(state: OverlayState, feed: tauri::State<'_, OverlayFeed>) {
     feed.set_state(state);

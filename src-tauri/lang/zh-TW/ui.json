@@ -14,6 +14,8 @@
     "settings": "配置",
     "tray": {
       "open-logs": "開啟紀錄",
+      "toggle-overlay-meter": "顯示傷害統計",
+      "toggle-overlay-menu": "顯示遊戲內設定介面",
       "reset-windows": "重設視窗",
       "about": "關於",
       "quit": "結束"
