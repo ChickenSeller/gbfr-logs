@@ -11,6 +11,21 @@
     "language": "語言",
     "meter-settings": "Meter 配置",
     "settings": "配置",
+    "tray": {
+      "open-logs": "開啟紀錄",
+      "reset-windows": "重設視窗",
+      "about": "關於",
+      "quit": "結束"
+    },
+    "windows": {
+      "logs": "GBFR Logs Kaguya Edition - 紀錄",
+      "about": "關於 GBFR Logs"
+    },
+    "about": {
+      "maintained": "由 <repo>ChickenSeller</repo> 維護與修改。",
+      "based-on": "基於 onelittlechildawa 的 <awa>GBFR Logs Awa Edition</awa>，以及 False Spring 的開源專案 <original>GBFR Logs</original>。",
+      "license": "授權條款"
+    },
     "back-btn": "返回",
     "delete-btn": "删除",
     "cancel-btn": "取消",

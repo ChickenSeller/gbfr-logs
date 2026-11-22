@@ -1,7 +1,8 @@
 import { Anchor, Box, Code, Divider, ScrollArea, Stack, Text, Title } from "@mantine/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/api/shell";
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 // Bundled at build time, so the window shows exactly the licence shipped with the source.
 import licenseText from "../../LICENSE?raw";
@@ -11,7 +12,7 @@ const AWA_EDITION_URL = "https://github.com/onelittlechildawa/gbfr-logs";
 const ORIGINAL_URL = "https://github.com/false-spring/gbfr-logs";
 
 /** Opens links in the default browser instead of inside the WebView. */
-const ExternalLink = ({ href, children }: { href: string; children: string }) => (
+const ExternalLink = ({ href, children }: { href: string; children?: ReactNode }) => (
   <Anchor
     href={href}
     onClick={(event) => {
@@ -25,6 +26,7 @@ const ExternalLink = ({ href, children }: { href: string; children: string }) =>
 
 /** About window, opened from the tray menu: version, credits and the MIT licence. */
 export const AboutPage = () => {
+  const { t } = useTranslation();
   const [version, setVersion] = useState("");
 
   useEffect(() => {
@@ -45,13 +47,19 @@ export const AboutPage = () => {
           )}
         </Title>
         <Text size="sm">
-          Maintained and modified by <ExternalLink href={REPOSITORY_URL}>ChickenSeller</ExternalLink>.
+          <Trans i18nKey="ui.about.maintained" components={{ repo: <ExternalLink href={REPOSITORY_URL} /> }} />
         </Text>
         <Text size="sm">
-          Based on <ExternalLink href={AWA_EDITION_URL}>GBFR Logs Awa Edition</ExternalLink> by onelittlechildawa and
-          the original open-source <ExternalLink href={ORIGINAL_URL}>GBFR Logs</ExternalLink> by False Spring.
+          <Trans
+            i18nKey="ui.about.based-on"
+            components={{
+              awa: <ExternalLink href={AWA_EDITION_URL} />,
+              original: <ExternalLink href={ORIGINAL_URL} />,
+            }}
+          />
         </Text>
-        <Divider my="xs" label="License" labelPosition="left" />
+        {/* The licence itself is a legal text and stays in its original English. */}
+        <Divider my="xs" label={t("ui.about.license")} labelPosition="left" />
         <ScrollArea flex={1} type="auto">
           <Code block>{licenseText}</Code>
         </ScrollArea>

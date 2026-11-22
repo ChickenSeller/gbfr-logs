@@ -11,6 +11,21 @@
     "language": "언어",
     "meter-settings": "미터기 설정",
     "settings": "설정",
+    "tray": {
+      "open-logs": "로그 열기",
+      "reset-windows": "창 초기화",
+      "about": "정보",
+      "quit": "종료"
+    },
+    "windows": {
+      "logs": "GBFR Logs Kaguya Edition - 로그",
+      "about": "GBFR Logs 정보"
+    },
+    "about": {
+      "maintained": "<repo>ChickenSeller</repo>가 유지보수 및 수정하고 있습니다.",
+      "based-on": "onelittlechildawa의 <awa>GBFR Logs Awa Edition</awa>과 False Spring의 오픈소스 <original>GBFR Logs</original>를 기반으로 합니다.",
+      "license": "라이선스"
+    },
     "back-btn": "뒤로",
     "delete-btn": "삭제",
     "cancel-btn": "취소",

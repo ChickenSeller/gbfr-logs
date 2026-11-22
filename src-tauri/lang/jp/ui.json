@@ -11,6 +11,21 @@
     "language": "言語",
     "meter-settings": "メーター設定",
     "settings": "設定",
+    "tray": {
+      "open-logs": "ログを開く",
+      "reset-windows": "ウィンドウをリセット",
+      "about": "このアプリについて",
+      "quit": "終了"
+    },
+    "windows": {
+      "logs": "GBFR Logs Kaguya Edition - ログ",
+      "about": "GBFR Logs について"
+    },
+    "about": {
+      "maintained": "<repo>ChickenSeller</repo> がメンテナンス・改修しています。",
+      "based-on": "onelittlechildawa による <awa>GBFR Logs Awa Edition</awa> と、False Spring によるオープンソースの <original>GBFR Logs</original> をもとにしています。",
+      "license": "ライセンス"
+    },
     "back-btn": "戻る",
     "delete-btn": "削除",
     "cancel-btn": "キャンセル",

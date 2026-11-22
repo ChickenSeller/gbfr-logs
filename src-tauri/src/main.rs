@@ -22,7 +22,7 @@ use rusqlite::params_from_iter;
 use serde::{Deserialize, Serialize};
 use tauri::{
     api::dialog::blocking::FileDialogBuilder, AppHandle, CustomMenuItem, LogicalSize, Manager,
-    Size, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
+    Size, State, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
 };
 use tauri_plugin_log::LogTarget;
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
@@ -569,6 +569,46 @@ fn system_tray_with_menu() -> SystemTray {
     SystemTray::new().with_menu(menu)
 }
 
+/// Translated labels for what the app draws natively (tray menu, window titles), sent by the
+/// logs window whenever its language is set.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeLabels {
+    open_logs: String,
+    reset_windows: String,
+    about: String,
+    quit: String,
+    logs_title: String,
+    about_title: String,
+}
+
+/// Title for the About window, which is created on first use.
+#[derive(Default)]
+struct AboutTitle(std::sync::Mutex<Option<String>>);
+
+/// The tray menu and window titles exist before any translation is loaded, so they start in
+/// English and are relabelled from the front-end, which owns the language setting.
+#[tauri::command]
+fn set_native_labels(app: AppHandle, about_title: State<AboutTitle>, labels: NativeLabels) {
+    let tray = app.tray_handle();
+    for (id, title) in [
+        ("open_logs", labels.open_logs),
+        ("reset_windows", labels.reset_windows),
+        ("about", labels.about),
+        ("quit", labels.quit),
+    ] {
+        let _ = tray.get_item(id).set_title(title);
+    }
+
+    if let Some(window) = app.get_window("logs") {
+        let _ = window.set_title(&labels.logs_title);
+    }
+    if let Some(window) = app.get_window("about") {
+        let _ = window.set_title(&labels.about_title);
+    }
+    *about_title.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(labels.about_title);
+}
+
 fn toggle_window_visibility(handle: &AppHandle, id: &str, focus: Option<bool>) {
     if let Some(window) = handle.get_window(id) {
         if let Some(focus_value) = focus {
@@ -644,11 +684,19 @@ fn show_about_window(handle: &AppHandle) {
 
     // Built off the tray handler: creating a WebView2 window on the event loop thread from an
     // event callback can deadlock on Windows.
+    let title = handle
+        .state::<AboutTitle>()
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .unwrap_or_else(|| "About GBFR Logs".to_string());
+
     let handle = handle.clone();
     tauri::async_runtime::spawn(async move {
         let mut builder =
             tauri::WindowBuilder::new(&handle, "about", tauri::WindowUrl::App("about".into()))
-                .title("About GBFR Logs")
+                .title(title)
                 .inner_size(560.0, 640.0)
                 .min_inner_size(420.0, 400.0)
                 .center();
@@ -684,6 +732,7 @@ fn main() {
                 .build(),
         )
         .manage(overlay_feed.clone())
+        .manage(AboutTitle::default())
         .system_tray(system_tray_with_menu())
         .on_system_tray_event(menu_tray_handler)
         .on_window_event(|event| {
@@ -700,6 +749,7 @@ fn main() {
             export_damage_log_to_file,
             overlay::push_overlay_state,
             overlay::push_overlay_notice,
+            set_native_labels,
         ])
         .setup(move |app| {
             // Perform the game hook check in a separate thread.
