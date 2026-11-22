@@ -1,16 +1,16 @@
-# GBFR Logs Awa Edition
+# GBFR Logs Kaguya Edition
 
 [![GitHub Release](https://img.shields.io/github/v/release/ChickenSeller/gbfr-logs)](https://github.com/ChickenSeller/gbfr-logs/releases)
 
 Community-maintained fork by [ChickenSeller](https://github.com/ChickenSeller) for Granblue Fantasy: Relink 2.0.2.
 
-This edition is based on [false-spring/gbfr-logs](https://github.com/false-spring/gbfr-logs) and retains its MIT license and upstream credits. The Awa Edition adds game 2.0.2 compatibility, the six new playable characters, separate same-character multiplayer tracking, automatic battle-log saving, a repaired battle-end hook, and updated skill-name tracking.
+Kaguya Edition is based on the [Awa Edition](https://github.com/onelittlechildawa/gbfr-logs) by onelittlechildawa, which is itself based on [false-spring/gbfr-logs](https://github.com/false-spring/gbfr-logs); it retains the MIT license and all upstream credits. The Awa Edition added game 2.0.2 compatibility, the six new playable characters, separate same-character multiplayer tracking, automatic battle-log saving, a repaired battle-end hook, and updated skill-name tracking.
 
 ## How to install
 
 - Go to [Releases](https://github.com/ChickenSeller/gbfr-logs/releases/)
 - Download the latest .msi installer and run it.
-- Open GBFR Logs Awa Edition after the game is already running.
+- Open GBFR Logs Kaguya Edition after the game is already running.
 
 ## Screenshots
 
@@ -50,7 +50,7 @@ This edition is based on [false-spring/gbfr-logs](https://github.com/false-sprin
 
 > Q: I closed the meter, but it's still running?
 
-When you close the windows, GBFR Logs Awa Edition continues to run in your task tray in the bottom right of your desktop.
+When you close the windows, GBFR Logs Kaguya Edition continues to run in your task tray in the bottom right of your desktop.
 
 This task tray functionality is meant to give you more options for customizing:
 
@@ -63,7 +63,7 @@ Try running the program after the game has been launched. Be sure to run the pro
 
 > Q: The application is not working / launching.
 
-GBFR Logs Awa Edition uses your built-in Microsoft Edge Webview2 Runtime to run the application. This keeps the app relatively small as we don't have to package in a browser.
+GBFR Logs Kaguya Edition uses your built-in Microsoft Edge Webview2 Runtime to run the application. This keeps the app relatively small as we don't have to package in a browser.
 
 However, you may have an out-of-date or missing "Webview2 Runtime":
 
@@ -71,21 +71,21 @@ However, you may have an out-of-date or missing "Webview2 Runtime":
 
 > Q: Is this safe? My antivirus is marking the installation as a virus / malware.
 
-As always, this is up to you to trust GBFR Logs Awa Edition. The program can trigger false positive flags. There are reasons why it can give such alerts:
+As always, this is up to you to trust GBFR Logs Kaguya Edition. The program can trigger false positive flags. There are reasons why it can give such alerts:
 
-- GBFR Logs Awa Edition does code DLL injection into the running game process which can look like a virus-like program.
-- GBFR Logs Awa Edition reads game memory and modifies game code at runtime in order to receive parser data.
+- GBFR Logs Kaguya Edition does code DLL injection into the running game process which can look like a virus-like program.
+- GBFR Logs Kaguya Edition reads game memory and modifies game code at runtime in order to receive parser data.
 - I recommend adding an exception / whitelisting for the installation folder so that your anti-virus does not delete it while your game is running, but you may not need to do so if you haven't ran into this issue.
 
 See [how to add an exclusion to Windows Defender](https://support.microsoft.com/en-us/windows/add-an-exclusion-to-windows-security-811816c0-4dfd-af4a-47e4-c301afe13b26).
 
 > Q: How do I update?
 
-Automatic updates are disabled in the Awa Edition so an upstream release cannot overwrite this fork. Download new installers manually from this fork's [Releases](https://github.com/ChickenSeller/gbfr-logs/releases) page.
+Automatic updates are disabled in the Kaguya Edition so an upstream release cannot overwrite this fork. Download new installers manually from this fork's [Releases](https://github.com/ChickenSeller/gbfr-logs/releases) page.
 
 > Q: How do I uninstall?
 
-You can uninstall GBFR Logs Awa Edition the normal way through the Control Panel or by running the uninstall script in the folder where you installed it to. You may also want to remove these folders.
+You can uninstall GBFR Logs Kaguya Edition the normal way through the Control Panel or by running the uninstall script in the folder where you installed it to. You may also want to remove these folders.
 
 - `%AppData%\gbfr-logs-awa`
 
@@ -123,4 +123,4 @@ This project would not have been possible without the following folks:
 - [false-spring/gbfr-logs](https://github.com/false-spring/gbfr-logs), the upstream project this edition is based on.
 ## Disclaimer
 
-Please keep in mind that this tool is meant to improve the experience that Cygames has provided us and is not meant to cause them or other players damage. GBFR Logs Awa Edition modifies your running game client and is not guaranteed to work after game patches, in which case you may experience instability or crashes.
+Please keep in mind that this tool is meant to improve the experience that Cygames has provided us and is not meant to cause them or other players damage. GBFR Logs Kaguya Edition modifies your running game client and is not guaranteed to work after game patches, in which case you may experience instability or crashes.

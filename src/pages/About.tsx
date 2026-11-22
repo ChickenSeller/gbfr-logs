@@ -37,7 +37,7 @@ export const AboutPage = () => {
     <Box p="md" h="100vh">
       <Stack gap="xs" h="100%">
         <Title order={3}>
-          GBFR Logs Awa Edition{" "}
+          GBFR Logs Kaguya Edition{" "}
           {version && (
             <Text span c="dimmed">
               {version}

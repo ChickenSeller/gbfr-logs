@@ -1,6 +1,6 @@
 # 更新日志
 
-本文件记录 GBFR Logs Awa Edition 的主要用户可见变更。
+本文件记录 GBFR Logs Kaguya Edition 的主要用户可见变更。1.8.7 及更早的版本发布自其前身 GBFR Logs Awa Edition。
 
 ## [1.8.7] - 2026-07-21
 
