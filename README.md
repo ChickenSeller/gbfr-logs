@@ -1,14 +1,14 @@
 # GBFR Logs Awa Edition
 
-[![GitHub Release](https://img.shields.io/github/v/release/onelittlechildawa/gbfr-logs)](https://github.com/onelittlechildawa/gbfr-logs/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/ChickenSeller/gbfr-logs)](https://github.com/ChickenSeller/gbfr-logs/releases)
 
-Community-maintained fork by [onelittlechildawa](https://github.com/onelittlechildawa) for Granblue Fantasy: Relink 2.0.2.
+Community-maintained fork by [ChickenSeller](https://github.com/ChickenSeller) for Granblue Fantasy: Relink 2.0.2.
 
 This edition is based on [false-spring/gbfr-logs](https://github.com/false-spring/gbfr-logs) and retains its MIT license and upstream credits. The Awa Edition adds game 2.0.2 compatibility, the six new playable characters, separate same-character multiplayer tracking, automatic battle-log saving, a repaired battle-end hook, and updated skill-name tracking.
 
 ## How to install
 
-- Go to [Releases](https://github.com/onelittlechildawa/gbfr-logs/releases/)
+- Go to [Releases](https://github.com/ChickenSeller/gbfr-logs/releases/)
 - Download the latest .msi installer and run it.
 - Open GBFR Logs Awa Edition after the game is already running.
 
@@ -81,7 +81,7 @@ See [how to add an exclusion to Windows Defender](https://support.microsoft.com/
 
 > Q: How do I update?
 
-Automatic updates are disabled in the Awa Edition so an upstream release cannot overwrite this fork. Download new installers manually from this fork's [Releases](https://github.com/onelittlechildawa/gbfr-logs/releases) page.
+Automatic updates are disabled in the Awa Edition so an upstream release cannot overwrite this fork. Download new installers manually from this fork's [Releases](https://github.com/ChickenSeller/gbfr-logs/releases) page.
 
 > Q: How do I uninstall?
 
@@ -95,7 +95,7 @@ Read [src-tauri/lang/README.md](./src-tauri/lang/README.md) for more information
 
 > Q: My issue isn't listed here, or I have a suggestion.
 
-Create a [new GitHub issue](https://github.com/onelittlechildawa/gbfr-logs/issues) in this fork.
+Create a [new GitHub issue](https://github.com/ChickenSeller/gbfr-logs/issues) in this fork.
 
 ## For Developers
 
@@ -114,7 +114,7 @@ This project is split up into a few subprojects:
 
 ## Credits
 
-Maintained as the Awa Edition by [onelittlechildawa](https://github.com/onelittlechildawa).
+Maintained by [ChickenSeller](https://github.com/ChickenSeller), based on the Awa Edition by [onelittlechildawa](https://github.com/onelittlechildawa).
 
 This project would not have been possible without the following folks:
 

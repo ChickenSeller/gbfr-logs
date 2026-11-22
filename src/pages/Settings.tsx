@@ -58,7 +58,8 @@ const SettingsPage = () => {
       <Stack gap={4} mb="md">
         <Text fw={700}>GBFR Logs Awa Edition</Text>
         <Text size="sm" c="dimmed">
-          Maintained and modified by onelittlechildawa. Based on the original open-source GBFR Logs project.
+          Maintained and modified by ChickenSeller. Based on GBFR Logs Awa Edition by onelittlechildawa and the original
+          open-source GBFR Logs project.
         </Text>
       </Stack>
       <Fieldset legend={t("ui.meter-settings")}>
