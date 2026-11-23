@@ -199,7 +199,9 @@
       "status-applied": "{{actor}}: {{status}} 부여",
       "status-applied-by": "{{actor}}: {{status}} 부여 ({{source}})",
       "status-removed": "{{actor}}: {{status}} 종료",
-      "kind-status": "상태 효과"
+      "kind-status": "상태 효과",
+      "part-broken": "{{enemy}}의 부위 파괴",
+      "kind-partBreak": "부위 파괴"
     },
     "statuses": {
       "StatusAilmentPoison": "독",

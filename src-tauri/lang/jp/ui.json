@@ -199,7 +199,9 @@
       "status-applied": "{{actor}}に{{status}}",
       "status-applied-by": "{{actor}}に{{status}}（{{source}}）",
       "status-removed": "{{actor}}の{{status}}が解除",
-      "kind-status": "状態効果"
+      "kind-status": "状態効果",
+      "part-broken": "{{enemy}}の部位を破壊",
+      "kind-partBreak": "部位破壊"
     },
     "statuses": {
       "StatusAilmentPoison": "毒",

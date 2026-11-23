@@ -6,7 +6,7 @@ use hudhook::imgui::{Condition, ImColor32, Ui, WindowFlags};
 use protocol::OverlayEnemy;
 
 use super::config::EnemyHpConfig;
-use crate::hooks::enemy_hp::{self, EnemyHp};
+use crate::hooks::enemy_hp::{self, EnemyHp, PartState};
 
 /// Default layout: a row along the top edge, right of the settings menu.
 const DEFAULT_POSITION: [f32; 2] = [470.0, 25.0];
@@ -19,6 +19,9 @@ const HP_COLOR: ImColor32 = ImColor32::from_rgba(214, 64, 52, 230);
 const LOW_HP_COLOR: ImColor32 = ImColor32::from_rgba(255, 160, 40, 230);
 const DEFEATED_COLOR: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
 const TEXT_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const PART_BAR_COLOR: ImColor32 = ImColor32::from_rgba(255, 196, 64, 220);
+const PART_TEXT_COLOR: [f32; 4] = [1.0, 0.85, 0.45, 1.0];
+const PART_BROKEN_COLOR: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
 
 /// Below this share of max HP the bar turns orange.
 const LOW_HP_RATIO: f32 = 0.3;
@@ -149,7 +152,63 @@ fn draw_enemy(ui: &Ui, config: &EnemyHpConfig, enemy: &EnemyHp, name: Option<&st
             .build();
     }
     drop(draw);
-    ui.dummy([width, bar_height + PADDING]);
+    ui.dummy([width, bar_height + PADDING * 0.5]);
+
+    let numbered = enemy.parts.len() > 1;
+    for (index, part) in enemy.parts.iter().enumerate() {
+        draw_part(ui, config, width, part, numbered.then_some(index + 1));
+    }
+    ui.dummy([width, PADDING * 0.5]);
+}
+
+/// The breakable part under the HP bar: a thinner bar with its durability, or "broken".
+fn draw_part(ui: &Ui, config: &EnemyHpConfig, width: f32, part: &PartState, number: Option<usize>) {
+    // The value is drained by stun damage to the part, so it is shown as a break value.
+    let name = match number {
+        Some(number) => format!("部位{number} 破坏值"),
+        None => "部位破坏值".to_string(),
+    };
+    let ratio = if part.max_durability > 0.0 {
+        (part.durability / part.max_durability).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let label = if part.broken() {
+        format!("{name}  已破坏")
+    } else {
+        format!(
+            "{name}  {:.0} / {:.0}  {:.0}%",
+            part.durability,
+            part.max_durability,
+            ratio * 100.0
+        )
+    };
+    let color = if part.broken() {
+        PART_BROKEN_COLOR
+    } else {
+        PART_TEXT_COLOR
+    };
+    ui.text_colored(color, label);
+
+    let bar_height = 5.0 * config.scale;
+    let [left, top] = ui.cursor_screen_pos();
+    let draw = ui.get_window_draw_list();
+    draw.add_rect([left, top], [left + width, top + bar_height], TRACK_COLOR)
+        .filled(true)
+        .rounding(2.0)
+        .build();
+    if ratio > 0.0 {
+        draw.add_rect(
+            [left, top],
+            [left + width * ratio, top + bar_height],
+            PART_BAR_COLOR,
+        )
+        .filled(true)
+        .rounding(2.0)
+        .build();
+    }
+    drop(draw);
+    ui.dummy([width, bar_height]);
 }
 
 /// `113810780` -> `113,810,780`.

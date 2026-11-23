@@ -273,6 +273,15 @@ pub struct OnDeathEvent {
     pub death_counter: u32,
 }
 
+/// An enemy's breakable part reaching zero durability.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PartBrokenEvent {
+    /// Enemy type hash, as `Actor::actor_type`.
+    pub enemy_type: u32,
+    /// Part id from the enemy's part record.
+    pub part_id: u32,
+}
+
 /// A status effect on a party member, read from the actor's `ExStatus` list.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct StatusEvent {
@@ -312,6 +321,8 @@ pub enum Message {
     StatusApplied(StatusEvent),
     /// A status effect left a party member: it expired, was cleared or was refreshed.
     StatusRemoved(StatusEvent),
+    /// An enemy's breakable part broke.
+    PartBroken(PartBrokenEvent),
     /// The player pressed a copy button in the in-game overlay. Handled by the app's UI and
     /// never stored in encounter logs. Must stay after every logged variant: bincode encodes
     /// the variant index.

@@ -1289,6 +1289,14 @@ impl Parser {
     }
 
     // Checks if the damage event should be ignored for the purposes of parsing.
+    pub fn on_part_broken(&mut self, event: protocol::PartBrokenEvent) {
+        if self.status != ParserStatus::InProgress {
+            return;
+        }
+        let now = Utc::now().timestamp_millis();
+        self.push_logged_event(now, Message::PartBroken(event));
+    }
+
     pub fn on_status_applied(&mut self, event: protocol::StatusEvent) {
         self.live_statuses
             .insert((event.actor_index, event.status_id), event.clone());

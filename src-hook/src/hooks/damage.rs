@@ -128,6 +128,12 @@ impl OnProcessDamageHook {
         let damage_instance = unsafe { NonNull::new(a2 as *mut DamageInstance).unwrap().as_ref() };
         let damage: i32 = damage_instance.damage;
 
+        // Every kind of damaged object is logged once, also zero-damage hits (e.g. on parts).
+        super::enemy_hp::describe_target_once(
+            target_specified_instance_ptr,
+            actor_type_id(target_specified_instance_ptr as *const usize),
+        );
+
         if original_value == 0 || damage <= 0 {
             return original_value;
         }
@@ -178,7 +184,14 @@ impl OnProcessDamageHook {
 
         let target_type_id: u32 = actor_type_id(target_specified_instance_ptr as *const usize);
         let target_idx = actor_idx(target_specified_instance_ptr as *const usize);
-        super::enemy_hp::observe(target_specified_instance_ptr, target_type_id);
+        if let Some((enemy_type, part_id)) =
+            super::enemy_hp::observe(target_specified_instance_ptr, target_type_id)
+        {
+            let _ = self.tx.send(Message::PartBroken(protocol::PartBrokenEvent {
+                enemy_type,
+                part_id,
+            }));
+        }
         // Party members, as attacker or as target, get their statuses watched.
         if super::enemy_hp::is_player_type(source_parent_type_id) {
             super::statuses::track(

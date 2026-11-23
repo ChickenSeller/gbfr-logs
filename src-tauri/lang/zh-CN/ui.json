@@ -199,7 +199,9 @@
       "status-applied": "{{actor}} 获得 {{status}}",
       "status-applied-by": "{{actor}} 获得 {{status}}（来自 {{source}}）",
       "status-removed": "{{actor}} 的 {{status}} 结束",
-      "kind-status": "状态效果"
+      "kind-status": "状态效果",
+      "part-broken": "{{enemy}} 的部位被破坏",
+      "kind-partBreak": "部位破坏"
     },
     "statuses": {
       "StatusAilmentPoison": "中毒",

@@ -501,6 +501,9 @@ fn connect_and_run_parser(app: AppHandle) {
                                         protocol::Message::OverlayClearRequest => {
                                             state.clear_live_encounter();
                                         }
+                                        protocol::Message::PartBroken(event) => {
+                                            state.on_part_broken(event);
+                                        }
                                         protocol::Message::StatusApplied(event) => {
                                             state.on_status_applied(event);
                                         }

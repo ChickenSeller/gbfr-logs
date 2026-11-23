@@ -57,6 +57,13 @@ pub enum CombatLogEntry {
         /// Enemy or character hash of whoever applied it, if known.
         source_type: Option<u32>,
     },
+    /// An enemy's breakable part broke.
+    #[serde(rename_all = "camelCase")]
+    PartBroken {
+        time: i64,
+        enemy_type: u32,
+        part_id: u32,
+    },
     #[serde(rename_all = "camelCase")]
     StatusRemoved {
         time: i64,
@@ -110,6 +117,11 @@ pub fn entry(time: i64, message: &Message) -> Option<CombatLogEntry> {
             actor_index: event.actor_index,
             class_name: event.class_name.clone(),
             source_type: event.source_type,
+        },
+        Message::PartBroken(event) => CombatLogEntry::PartBroken {
+            time,
+            enemy_type: event.enemy_type,
+            part_id: event.part_id,
         },
         Message::StatusRemoved(event) => CombatLogEntry::StatusRemoved {
             time,

@@ -8,7 +8,7 @@ import { statusName } from "./statuses";
 import { CharacterType, CombatLogEntry, ComputedPlayerState, EncounterState, PlayerData, SkillState } from "./types";
 import { getSkillName, resolvePlayerColor, translateEnemyTypeId, translatedPlayerName } from "./utils";
 
-export const COMBAT_LOG_KINDS = ["damage", "damageTaken", "status", "sba", "death"] as const;
+export const COMBAT_LOG_KINDS = ["damage", "damageTaken", "status", "partBreak", "sba", "death"] as const;
 export type CombatLogKind = (typeof COMBAT_LOG_KINDS)[number];
 
 export type CombatLogLine = {
@@ -41,6 +41,8 @@ export const kindOf = (entry: CombatLogEntry): CombatLogKind => {
     case "statusApplied":
     case "statusRemoved":
       return "status";
+    case "partBroken":
+      return "partBreak";
     default:
       return "sba";
   }
@@ -174,6 +176,14 @@ export const formatCombatLogEntry = (entry: CombatLogEntry, context: CombatLogCo
         }),
       };
     }
+    case "partBroken":
+      return {
+        time,
+        kind,
+        color: "#ffd43b",
+        actorIndex: -1,
+        text: t("ui.combat-log.part-broken", { enemy: translateEnemyTypeId(entry.enemyType) }),
+      };
     case "statusApplied":
     case "statusRemoved": {
       const { name, color } = combatLogMember(context, entry.actorIndex);

@@ -199,7 +199,9 @@
       "status-applied": "{{actor}} gained {{status}}",
       "status-applied-by": "{{actor}} gained {{status}} from {{source}}",
       "status-removed": "{{actor}}: {{status}} ended",
-      "kind-status": "Status Effects"
+      "kind-status": "Status Effects",
+      "part-broken": "{{enemy}}: part broken",
+      "kind-partBreak": "Part Breaks"
     },
     "statuses": {
       "StatusAilmentPoison": "Poison",

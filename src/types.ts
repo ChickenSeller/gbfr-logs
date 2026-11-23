@@ -204,7 +204,8 @@ export type CombatLogEntry =
     }
   | { kind: "sbaReady" | "sbaPerform" | "sbaChain" | "death"; time: number; actorIndex: number }
   | { kind: "statusApplied"; time: number; actorIndex: number; className: string; sourceType: number | null }
-  | { kind: "statusRemoved"; time: number; actorIndex: number; className: string };
+  | { kind: "statusRemoved"; time: number; actorIndex: number; className: string }
+  | { kind: "partBroken"; time: number; enemyType: number; partId: number };
 
 /** Statistics of one status class on one party member. */
 export type StatusStats = {

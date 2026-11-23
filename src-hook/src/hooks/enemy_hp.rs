@@ -11,10 +11,25 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use log::info;
+
 use super::read_process_value;
 
 const HP_OFFSET: usize = 0x160;
 const MAX_HP_OFFSET: usize = 0x168;
+
+/// Breakable part records (game 2.0.2): a part id whose low 16 bits repeat the enemy's class
+/// number (`Em1806` -> 0x21806) and, 8 bytes before it, the part's remaining break value as a
+/// float, drained by stun damage to that part. Found on Ewiyar at +0x27AC / +0x27A4. Other
+/// enemies keep them elsewhere, so each enemy's first `PART_SCAN_SIZE` bytes are searched once.
+const PART_SCAN_SIZE: usize = 0x10000;
+const PART_DURABILITY_BEFORE_ID: usize = 8;
+/// High half of a part id: small numbers only (Ewiyar's is 2).
+const PART_ID_HIGH: std::ops::RangeInclusive<u32> = 1..=0x40;
+const MAX_PARTS: usize = 16;
+/// A fresh part has a real break value (Ewiyar's head: 1500); near-zero floats are other data.
+const MIN_PART_DURABILITY: f32 = 1.0;
+const MAX_PLAUSIBLE_DURABILITY: f32 = 10_000_000.0;
 /// Sanity bound; real values are far below it.
 const MAX_PLAUSIBLE_HP: i64 = 100_000_000_000;
 
@@ -40,6 +55,96 @@ pub struct EnemyHp {
     pub type_hash: u32,
     pub hp: i64,
     pub max_hp: i64,
+    /// Breakable parts, in memory order.
+    pub parts: Vec<PartState>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PartState {
+    pub id: u32,
+    pub durability: f32,
+    /// Highest durability seen; the game keeps the starting value elsewhere.
+    pub max_durability: f32,
+}
+
+impl PartState {
+    pub fn broken(&self) -> bool {
+        self.durability <= 0.0
+    }
+}
+
+/// A part that broke on the last hit: (enemy type hash, part id).
+pub type PartBreak = (u32, u32);
+
+/// The enemy's class number from its RTTI name, e.g. `Em1806` -> 0x1806.
+fn class_number(instance: usize) -> Option<u32> {
+    let vtable = read_process_value::<usize>(instance as *const usize)?;
+    let name = super::statuses::class_name(vtable)?;
+    let digits = name.strip_prefix("Em")?.get(..4)?;
+    u32::from_str_radix(digits, 16).ok()
+}
+
+fn plausible_durability(value: f32) -> bool {
+    value.is_finite() && (-1.0..=MAX_PLAUSIBLE_DURABILITY).contains(&value)
+}
+
+/// Offsets of the part ids in an enemy instance, found by their shape: low half equal to the
+/// class number, a small high half, and a plausible break value 8 bytes before.
+fn find_parts(instance: usize, class: u32) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    for block in (0..PART_SCAN_SIZE).step_by(0x1000) {
+        let Some(words) =
+            read_process_value::<[u32; 0x400]>((instance + block) as *const [u32; 0x400])
+        else {
+            continue;
+        };
+        for (index, word) in words.iter().enumerate() {
+            let offset = block + index * 4;
+            if word & 0xFFFF != class
+                || !PART_ID_HIGH.contains(&(word >> 16))
+                || offset < PART_DURABILITY_BEFORE_ID
+            {
+                continue;
+            }
+            let durability = read_process_value::<f32>(
+                (instance + offset - PART_DURABILITY_BEFORE_ID) as *const f32,
+            );
+            if durability
+                .is_some_and(|value| plausible_durability(value) && value >= MIN_PART_DURABILITY)
+            {
+                offsets.push(offset);
+                if offsets.len() >= MAX_PARTS {
+                    return offsets;
+                }
+            }
+        }
+    }
+    offsets
+}
+
+/// Current state of each part; `previous` keeps the highest break value seen per part.
+fn read_parts(instance: usize, offsets: &[usize], previous: &[PartState]) -> Vec<PartState> {
+    offsets
+        .iter()
+        .filter_map(|offset| {
+            let id = read_process_value::<u32>((instance + offset) as *const u32)?;
+            let durability = read_process_value::<f32>(
+                (instance + offset - PART_DURABILITY_BEFORE_ID) as *const f32,
+            )?;
+            if !plausible_durability(durability) {
+                return None;
+            }
+            let max_durability = previous
+                .iter()
+                .find(|part| part.id == id)
+                .map_or(durability, |part| part.max_durability.max(durability));
+            Some(PartState {
+                id,
+                durability: durability.max(0.0),
+                max_durability,
+            })
+        })
+        .collect()
 }
 
 struct Tracked {
@@ -50,6 +155,9 @@ struct Tracked {
     max_hp: i64,
     last_hit: Instant,
     defeated_at: Option<Instant>,
+    /// Offsets of the part ids, found when the enemy is first hit.
+    part_offsets: Vec<usize>,
+    parts: Vec<PartState>,
 }
 
 static TRACKED: Mutex<Vec<Tracked>> = Mutex::new(Vec::new());
@@ -72,17 +180,14 @@ fn is_player(type_hash: u32) -> bool {
     PLAYER_TYPE_HASHES.contains(&type_hash)
 }
 
-/// Records a damaged target; called after the game applied the damage.
-pub fn observe(instance: usize, type_hash: u32) {
+/// Records a damaged target; called after the game applied the damage. Returns the part that
+/// this hit broke, if any.
+pub fn observe(instance: usize, type_hash: u32) -> Option<PartBreak> {
     if instance == 0 || type_hash == 0 || is_player(type_hash) {
-        return;
+        return None;
     }
-    let Some((hp, max_hp)) = read_hp(instance) else {
-        return;
-    };
-    let Some(vtable) = read_process_value::<usize>(instance as *const usize) else {
-        return;
-    };
+    let (hp, max_hp) = read_hp(instance)?;
+    let vtable = read_process_value::<usize>(instance as *const usize)?;
     let now = Instant::now();
     let mut tracked = lock();
     if let Some(entry) = tracked.iter_mut().find(|t| t.instance == instance) {
@@ -95,13 +200,38 @@ pub fn observe(instance: usize, type_hash: u32) {
         }
         entry.hp = hp;
         entry.last_hit = now;
-        return;
+        let before = std::mem::take(&mut entry.parts);
+        entry.parts = read_parts(instance, &entry.part_offsets, &before);
+        let broke = entry.parts.iter().find(|after| {
+            after.broken()
+                && before
+                    .iter()
+                    .any(|part| part.id == after.id && !part.broken())
+        });
+        if let Some(part) = broke {
+            info!("Enemy {type_hash:#x}: part {:#x} broke", part.id);
+        }
+        return broke.map(|part| (type_hash, part.id));
     }
     if tracked.len() >= MAX_TRACKED {
         if let Some(oldest) = (0..tracked.len()).min_by_key(|&i| tracked[i].last_hit) {
             tracked.swap_remove(oldest);
         }
     }
+    let class = class_number(instance);
+    let part_offsets = class.map_or_else(Vec::new, |class| find_parts(instance, class));
+    let parts = read_parts(instance, &part_offsets, &[]);
+    info!(
+        "Enemy {type_hash:#x} (class {}): {} part record(s) {}",
+        class.map_or("?".into(), |class| format!("Em{class:04X}")),
+        parts.len(),
+        part_offsets
+            .iter()
+            .zip(&parts)
+            .map(|(offset, part)| format!("+{offset:#x} id {:#x} {:.1}", part.id, part.durability))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     tracked.push(Tracked {
         instance,
         vtable,
@@ -110,7 +240,32 @@ pub fn observe(instance: usize, type_hash: u32) {
         max_hp,
         last_hit: now,
         defeated_at: None,
+        part_offsets,
+        parts,
     });
+    None
+}
+
+/// Logs each kind of damaged non-player object once (class, type, HP fields), to find objects
+/// such as separate breakable parts that do not show up as enemies.
+pub fn describe_target_once(instance: usize, type_hash: u32) {
+    static SEEN: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+    let class = read_process_value::<usize>(instance as *const usize)
+        .and_then(super::statuses::class_name)
+        .unwrap_or_else(|| "?".into());
+    if instance == 0 || is_player(type_hash) {
+        return;
+    }
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if seen.len() >= 64 || seen.iter().any(|(c, t)| *c == class && *t == type_hash) {
+        return;
+    }
+    seen.push((class.clone(), type_hash));
+    info!(
+        "Damaged object {class} type {type_hash:#x}: +0x160 {:?} +0x168 {:?}",
+        read_process_value::<i64>((instance + HP_OFFSET) as *const i64),
+        read_process_value::<i64>((instance + MAX_HP_OFFSET) as *const i64)
+    );
 }
 
 /// Re-reads every tracked enemy and returns the ones still worth showing, biggest max HP
@@ -128,6 +283,8 @@ pub fn snapshot() -> Vec<EnemyHp> {
             return false;
         }
         entry.hp = hp;
+        let previous = std::mem::take(&mut entry.parts);
+        entry.parts = read_parts(entry.instance, &entry.part_offsets, &previous);
         if hp == 0 {
             let defeated_at = *entry.defeated_at.get_or_insert(now);
             return now.duration_since(defeated_at) < DEFEATED_LINGER;
@@ -149,6 +306,7 @@ pub fn snapshot() -> Vec<EnemyHp> {
             type_hash: entry.type_hash,
             hp: entry.hp,
             max_hp: entry.max_hp,
+            parts: entry.parts.clone(),
         })
         .collect()
 }
