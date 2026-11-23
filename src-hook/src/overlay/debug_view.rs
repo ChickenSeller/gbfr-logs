@@ -24,6 +24,14 @@ const NEAR: f32 = 0.1;
 const ENEMY_COLOR: ImColor32 = ImColor32::from_rgba(255, 90, 80, 230);
 const PARTY_COLOR: ImColor32 = ImColor32::from_rgba(90, 200, 255, 230);
 const SHADOW_COLOR: ImColor32 = ImColor32::from_rgba(0, 0, 0, 200);
+const FACING_COLOR: ImColor32 = ImColor32::from_rgba(255, 220, 60, 230);
+/// Length of an enemy's facing arrow, in world units.
+const FACING_LENGTH: f32 = 5.0;
+/// How long a hit point stays on screen, fading out.
+const HIT_LIFETIME: std::time::Duration = std::time::Duration::from_secs(3);
+const HIT_RADIUS: f32 = 4.0;
+/// Hits by someone not in the snapshot.
+const HIT_DEFAULT_RGB: u32 = 0xFFFFFF;
 
 type Vec3 = [f32; 3];
 
@@ -116,6 +124,9 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
         return;
     };
     let draw = ui.get_background_draw_list();
+    drop(draw);
+    draw_hits(ui, &camera, state);
+    let draw = ui.get_background_draw_list();
     let mut mark = |instance: usize, label: &str, color: ImColor32| {
         let Some(feet) = read_vec3(instance + ACTOR_POSITION) else {
             return;
@@ -155,6 +166,23 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
             .map(|e| e.name.clone())
             .unwrap_or_else(|| format!("{:08x}", enemy.type_hash));
         mark(enemy.id, &name, ENEMY_COLOR);
+        // The facing the hit points turn with, to check it against the body.
+        if let (Some(feet), Some(forward)) = (
+            read_vec3(enemy.id + ACTOR_POSITION),
+            crate::hooks::hits::forward(enemy.id),
+        ) {
+            let lift = 0.5;
+            let from = [feet[0], feet[1] + lift, feet[2]];
+            let to = [
+                feet[0] + forward[0] * FACING_LENGTH,
+                feet[1] + lift,
+                feet[2] + forward[2] * FACING_LENGTH,
+            ];
+            if let (Some(a), Some(b)) = (camera.project(from), camera.project(to)) {
+                draw.add_line(a, b, FACING_COLOR).thickness(3.0).build();
+                draw.add_circle(b, 5.0, FACING_COLOR).filled(true).build();
+            }
+        }
     }
     for (actor_index, instance) in crate::hooks::statuses::party_instances() {
         let name = state
@@ -162,6 +190,35 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
             .map(|p| p.name.clone())
             .unwrap_or_else(|| format!("#{actor_index}"));
         mark(instance, &name, PARTY_COLOR);
+    }
+}
+
+/// Recent hit points as dots in the attacker's meter colour, fading over `HIT_LIFETIME`.
+fn draw_hits(ui: &Ui, camera: &Camera, state: Option<&OverlayState>) {
+    let hits = crate::hooks::hits::recent(HIT_LIFETIME);
+    if hits.is_empty() {
+        return;
+    }
+    let draw = ui.get_background_draw_list();
+    for hit in hits {
+        let Some(point) = camera.project(hit.current_position()) else {
+            continue;
+        };
+        let rgb = state
+            .and_then(|state| state.players.iter().find(|p| p.index == hit.source_index))
+            .map_or(HIT_DEFAULT_RGB, |p| p.color);
+        let life = 1.0 - hit.at.elapsed().as_secs_f32() / HIT_LIFETIME.as_secs_f32();
+        let alpha = (life.clamp(0.0, 1.0) * 230.0) as u8;
+        let [_, r, g, b] = rgb.to_be_bytes();
+        draw.add_circle(point, HIT_RADIUS, ImColor32::from_rgba(r, g, b, alpha))
+            .filled(true)
+            .build();
+        draw.add_circle(
+            point,
+            HIT_RADIUS + 1.0,
+            ImColor32::from_rgba(0, 0, 0, alpha / 2),
+        )
+        .build();
     }
 }
 

@@ -23,8 +23,10 @@ mod death;
 pub mod enemy_hp;
 mod ffi;
 mod globals;
+pub mod hits;
 mod player;
 mod quest;
+pub mod rtti;
 mod sba;
 pub mod statuses;
 
@@ -74,6 +76,7 @@ pub fn setup_hooks(tx: event::Tx) -> Result<()> {
     let process = Process::with_name("granblue_fantasy_relink.exe")?;
 
     crate::diagnostics::setup(process.base_address, tx.clone());
+    rtti::setup(process.base_address);
 
     match damage_details::setup(&process) {
         Ok(()) => {
@@ -173,6 +176,7 @@ pub(super) fn reset_battle_identity_state() {
     player::reset_battle_identity_state();
     enemy_hp::reset();
     statuses::reset();
+    hits::reset();
     info!("Battle identity caches reset");
 }
 

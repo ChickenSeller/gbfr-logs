@@ -182,6 +182,27 @@ impl OnProcessDamageHook {
             let _ = self.tx.send(Message::PlayerIdentityEvent(identity));
         }
 
+        // Party members' hits, for the debug view.
+        if super::enemy_hp::is_player_type(source_parent_type_id) {
+            // The acting form (Id's dragon) stands in for the member in the debug view; pets
+            // and summons do not, they act away from their owner.
+            // Ferry's ghosts (Pl0700Ghost, Pl0700GhostSatellite) are pets, not forms.
+            const FERRY_GHOSTS: [u32; 2] = [0x2AF6_78E8, 0x8364_C8BC];
+            if super::enemy_hp::is_player_type(source_type_id)
+                && !FERRY_GHOSTS.contains(&source_type_id)
+            {
+                super::statuses::note_active(
+                    source_parent_idx,
+                    source_specified_instance_ptr as usize,
+                );
+            }
+            super::hits::record(
+                a2 as usize,
+                target_specified_instance_ptr,
+                source_parent_idx,
+                damage,
+            );
+        }
         let target_type_id: u32 = actor_type_id(target_specified_instance_ptr as *const usize);
         let target_idx = actor_idx(target_specified_instance_ptr as *const usize);
         if let Some((enemy_type, part_id)) =

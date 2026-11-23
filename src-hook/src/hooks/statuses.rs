@@ -232,13 +232,36 @@ fn poll(tx: &event::Tx) {
     }
 }
 
-/// Tracked party members as (actor index, instance), for the overlay's debug view.
+/// The actor that last acted for each party member, e.g. Id's dragon form instead of Id.
+static ACTIVE: Mutex<Vec<(u32, usize, std::time::Instant)>> = Mutex::new(Vec::new());
+/// How long an acting form stands in for the member after its last hit.
+const ACTIVE_FOR: Duration = Duration::from_secs(5);
+
+/// Records the instance that just dealt damage for a party member.
+pub fn note_active(actor_index: u32, instance: usize) {
+    if instance == 0 {
+        return;
+    }
+    let mut active = ACTIVE.lock().unwrap_or_else(|e| e.into_inner());
+    active.retain(|(index, _, _)| *index != actor_index);
+    active.push((actor_index, instance, std::time::Instant::now()));
+}
+
+/// Tracked party members as (actor index, instance), for the overlay's debug view. A form that
+/// acted recently (Id's dragon) replaces the member's own instance.
 pub fn party_instances() -> Vec<(u32, usize)> {
+    let active = ACTIVE.lock().unwrap_or_else(|e| e.into_inner());
     ACTORS
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .iter()
-        .map(|actor| (actor.actor_index, actor.instance))
+        .map(|actor| {
+            let acting = active
+                .iter()
+                .find(|(index, _, at)| *index == actor.actor_index && at.elapsed() < ACTIVE_FOR)
+                .map_or(actor.instance, |(_, instance, _)| *instance);
+            (actor.actor_index, acting)
+        })
         .collect()
 }
 

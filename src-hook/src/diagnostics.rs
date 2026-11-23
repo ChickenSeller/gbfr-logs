@@ -59,7 +59,9 @@ fn report() -> Value {
         "party": crate::hooks::statuses::probe(),
         "enemies": crate::hooks::enemy_hp::probe(),
         "cameras": cameras(),
+        "collisions": collisions(),
         "party_floats": crate::hooks::statuses::instance_floats(PARTY_FLOATS),
+        "enemy_floats": enemy_floats(),
     })
 }
 
@@ -69,7 +71,9 @@ const CAMERA_RVAS: [usize; 6] = [
 ];
 const CAMERA_SIZE: usize = 0x440;
 /// Bytes of each party member instance dumped as floats, to find world positions.
-const PARTY_FLOATS: usize = 0x800;
+const PARTY_FLOATS: usize = 0x2000;
+/// Bytes of each tracked enemy dumped as floats, to find orientations.
+const ENEMY_FLOATS: usize = 0x2000;
 
 /// Floats of `len` bytes at `address`, rounded; unreadable words are null.
 pub fn floats(address: usize, len: usize) -> Value {
@@ -103,6 +107,80 @@ fn cameras() -> Value {
                     "vtable_class": crate::hooks::read_value::<usize>(address as *const usize)
                         .and_then(crate::hooks::statuses::class_name_of_vtable),
                     "floats": floats(address, CAMERA_SIZE),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// The first `ENEMY_FLOATS` bytes of every tracked enemy as floats.
+fn enemy_floats() -> Value {
+    Value::Array(
+        crate::hooks::enemy_hp::instances()
+            .into_iter()
+            .map(|(hash, instance)| {
+                json!({
+                    "type_hash": format!("{hash:#x}"),
+                    "floats": floats(instance, ENEMY_FLOATS),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// `ExCollision` of every tracked enemy and party member: where it is, its element vector at
+/// +0x90 and the first elements (pointees' classes and floats if they are pointers).
+fn collisions() -> Value {
+    const VECTOR: usize = 0x90;
+    const ELEMENTS: usize = 12;
+    const ELEMENT_FLOATS: usize = 0x100;
+    let mut actors: Vec<(String, usize)> = crate::hooks::enemy_hp::instances()
+        .into_iter()
+        .map(|(hash, instance)| (format!("enemy {hash:#x}"), instance))
+        .collect();
+    actors.extend(
+        crate::hooks::statuses::party_instances()
+            .into_iter()
+            .map(|(index, instance)| (format!("party {index}"), instance)),
+    );
+    let read_usize = |address: usize| crate::hooks::read_value::<usize>(address as *const usize);
+    Value::Array(
+        actors
+            .into_iter()
+            .map(|(who, instance)| {
+                let class = read_usize(instance).and_then(crate::hooks::statuses::class_name_of_vtable);
+                let Some(offset) = crate::hooks::rtti::base_offset(instance, "ExCollision") else {
+                    return json!({ "actor": who, "class": class, "ex_collision": null });
+                };
+                let collision = instance + offset;
+                let begin = read_usize(collision + VECTOR).unwrap_or(0);
+                let end = read_usize(collision + VECTOR + 8).unwrap_or(0);
+                let bytes = end.saturating_sub(begin);
+                let words: Vec<usize> = (0..(bytes / 8).min(ELEMENTS * 8))
+                    .filter_map(|i| read_usize(begin + i * 8))
+                    .collect();
+                let pointees: Vec<Value> = words
+                    .iter()
+                    .take(ELEMENTS)
+                    .filter(|w| **w > 0x10000 && **w < 0x7FFF_FFFF_0000 && **w % 8 == 0)
+                    .map(|pointer| {
+                        json!({
+                            "address": format!("{pointer:#x}"),
+                            "class": read_usize(*pointer).and_then(crate::hooks::statuses::class_name_of_vtable),
+                            "floats": floats(*pointer, ELEMENT_FLOATS),
+                        })
+                    })
+                    .collect();
+                json!({
+                    "actor": who,
+                    "class": class,
+                    "ex_collision": format!("+{offset:#x}"),
+                    "header_floats": floats(collision, 0xB0),
+                    "vector_bytes": bytes,
+                    "vector_words": words.iter().map(|w| format!("{w:#x}")).collect::<Vec<_>>(),
+                    "vector_floats": floats(begin, bytes.min(0x400)),
+                    "pointees": pointees,
+                    "feet": floats(instance + 0x30, 12),
                 })
             })
             .collect(),

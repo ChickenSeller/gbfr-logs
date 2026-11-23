@@ -311,6 +311,14 @@ pub fn snapshot() -> Vec<EnemyHp> {
         .collect()
 }
 
+/// Tracked enemies as (type hash, instance), for diagnostics.
+pub fn instances() -> Vec<(u32, usize)> {
+    lock()
+        .iter()
+        .map(|entry| (entry.type_hash, entry.instance))
+        .collect()
+}
+
 /// Type hash of a tracked enemy instance.
 pub fn type_of(instance: usize) -> Option<u32> {
     lock()
