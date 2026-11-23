@@ -376,8 +376,21 @@ impl MeterWindow {
             .max()
             .unwrap_or(0)
             .max(1) as f32;
+        let segments = config.segment_by_attack_type && !state.attack_types.is_empty();
+        if segments {
+            draw_attack_legend(frame, &state.attack_types);
+        }
         for (player, cells) in players.iter().zip(&values) {
-            self.draw_player(frame, player, cells, &right_edges, name_right, top_damage);
+            let types = segments.then_some(state.attack_types.as_slice());
+            self.draw_player(
+                frame,
+                player,
+                cells,
+                &right_edges,
+                name_right,
+                top_damage,
+                types,
+            );
             if self.expanded_players.contains(&player.index) {
                 draw_attack_composition(frame, player, &view.state.attack_types);
                 self.draw_skills(frame, player, show_full);
@@ -393,6 +406,7 @@ impl MeterWindow {
         right_edges: &[f32],
         name_right: f32,
         top_damage: f32,
+        attack_types: Option<&[OverlayAttackType]>,
     ) {
         let (left, top, width) = (frame.left, frame.y, frame.layout.width);
         let height = frame.layout.row_height;
@@ -405,17 +419,53 @@ impl MeterWindow {
             .rounding(rounding)
             .build();
         let fill = (player.total_damage as f32 / top_damage).clamp(0.0, 1.0);
-        if fill > 0.0 {
-            frame
-                .draw
-                .add_rect(
-                    [left, top],
-                    [left + width * fill, top + height],
-                    color_with_alpha(player.color, BAR_ALPHA),
-                )
-                .filled(true)
-                .rounding(rounding)
-                .build();
+        let attack_total: u64 = player.attack_damage.iter().sum();
+        match attack_types {
+            // Same length as the plain bar, split by attack type; a stripe of the player's
+            // colour on the left keeps rows apart.
+            Some(types) if fill > 0.0 && attack_total > 0 => {
+                let filled = width * fill;
+                let mut x = left;
+                for (kind, damage) in types.iter().zip(&player.attack_damage) {
+                    if *damage == 0 {
+                        continue;
+                    }
+                    let segment = filled * (*damage as f32 / attack_total as f32);
+                    frame
+                        .draw
+                        .add_rect(
+                            [x, top],
+                            [(x + segment).min(left + filled), top + height],
+                            color_with_alpha(kind.color, BAR_ALPHA),
+                        )
+                        .filled(true)
+                        .build();
+                    x += segment;
+                }
+                let stripe = (height * 0.25).min(filled);
+                frame
+                    .draw
+                    .add_rect(
+                        [left, top],
+                        [left + stripe, top + height],
+                        color_with_alpha(player.color, 255),
+                    )
+                    .filled(true)
+                    .build();
+            }
+            _ if fill > 0.0 => {
+                frame
+                    .draw
+                    .add_rect(
+                        [left, top],
+                        [left + width * fill, top + height],
+                        color_with_alpha(player.color, BAR_ALPHA),
+                    )
+                    .filled(true)
+                    .rounding(rounding)
+                    .build();
+            }
+            _ => {}
         }
 
         let (clicked, hovered) = frame.button(
@@ -682,6 +732,37 @@ fn skill_cells(skill: &OverlaySkill, show_full: bool) -> [String; 6] {
         format_amount(average, show_full),
         format!("{:.0}%", skill.percentage),
     ]
+}
+
+/// Above segmented bars: what each colour stands for, wrapped to the meter width.
+fn draw_attack_legend(frame: &mut Frame, types: &[OverlayAttackType]) {
+    let left = frame.left + frame.layout.padding;
+    let right = frame.right();
+    let gap = frame.layout.row_gap.max(2.0);
+    let line_height = frame.ui.text_line_height();
+    let swatch = line_height * 0.6;
+    let spacing = line_height * 0.8;
+    let mut x = left;
+    for kind in types {
+        let item_width = swatch + 4.0 + frame.ui.calc_text_size(&kind.label)[0];
+        if x > left && x + item_width > right {
+            x = left;
+            frame.y += line_height + gap;
+        }
+        let swatch_top = frame.y + (line_height - swatch) / 2.0;
+        frame
+            .draw
+            .add_rect(
+                [x, swatch_top],
+                [x + swatch, swatch_top + swatch],
+                color_with_alpha(kind.color, 255),
+            )
+            .filled(true)
+            .build();
+        frame.text([x + swatch + 4.0, frame.y], MUTED_COLOR, &kind.label);
+        x += item_width + spacing;
+    }
+    frame.y += line_height + gap;
 }
 
 /// Under an expanded player: a stacked bar of the damage per attack type, then a legend with

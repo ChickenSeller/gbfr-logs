@@ -89,6 +89,8 @@ pub struct MeterConfig {
     pub scale: f32,
     /// Column the players are ordered by, chosen by clicking a header.
     pub sort: OverlaySort,
+    /// Split each player's bar by attack type (normal, skill, SBA, ...) instead of one colour.
+    pub segment_by_attack_type: bool,
 }
 
 impl Default for MeterConfig {
@@ -98,6 +100,7 @@ impl Default for MeterConfig {
             width: 505.0,
             scale: 1.0,
             sort: OverlaySort::default(),
+            segment_by_attack_type: false,
         }
     }
 }

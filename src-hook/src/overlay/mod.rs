@@ -240,6 +240,7 @@ impl OverlayRenderLoop {
     /// Sliders apply on the next frame, so the meter resizes while they are dragged.
     fn render_meter_settings(&mut self, ui: &imgui::Ui) {
         let meter = &mut self.config.meter;
+        ui.checkbox("伤害条按攻击类型分段", &mut meter.segment_by_attack_type);
         let (min_width, max_width) = config::METER_WIDTH_RANGE;
         ui.slider_config("宽度", min_width, max_width)
             .display_format("%.0f px")
@@ -251,6 +252,7 @@ impl OverlayRenderLoop {
         if ui.button("重置位置和大小") {
             *meter = config::MeterConfig {
                 sort: meter.sort,
+                segment_by_attack_type: meter.segment_by_attack_type,
                 ..config::MeterConfig::default()
             };
             self.meter.reset_position();
