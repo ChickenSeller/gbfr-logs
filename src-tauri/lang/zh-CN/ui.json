@@ -20,6 +20,7 @@
       "toggle-overlay-combat-log": "显示战斗日志",
       "toggle-overlay-menu": "显示游戏内设置界面",
       "reset-windows": "重置窗口",
+      "export-diagnostics": "导出诊断文件",
       "about": "关于",
       "quit": "退出"
     },
@@ -238,7 +239,11 @@
       "damage-while-active": "期间承受伤害",
       "damage-while-active-hint": "该状态生效期间，此队员受到的敌人伤害。同时有多个状态时，同一次伤害会分别计入每个状态。"
     },
-    "overlay-cleared": "已清空，从下一次命中重新统计。之前的数据已保存为日志。"
+    "overlay-cleared": "已清空，从下一次命中重新统计。之前的数据已保存为日志。",
+    "diagnostics": {
+      "exported": "诊断文件已保存：{{path}}",
+      "failed": "导出诊断文件失败：{{error}}"
+    }
   },
   "characters": {
     "Pl0000": "古兰",

@@ -171,6 +171,28 @@ pub fn reset() {
     lock().clear();
 }
 
+/// Live state of the tracked enemies, for the diagnostics export.
+pub fn probe() -> serde_json::Value {
+    use serde_json::json;
+    let tracked = lock();
+    serde_json::Value::Array(
+        tracked
+            .iter()
+            .map(|entry| {
+                json!({
+                    "instance": format!("{:#x}", entry.instance),
+                    "class": read_process_value::<usize>(entry.instance as *const usize)
+                        .and_then(super::statuses::class_name),
+                    "type_hash": format!("{:#x}", entry.type_hash),
+                    "hp_tracked": entry.hp,
+                    "max_hp_tracked": entry.max_hp,
+                    "hp_live": read_hp(entry.instance).map(|(hp, _)| hp),
+                })
+            })
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

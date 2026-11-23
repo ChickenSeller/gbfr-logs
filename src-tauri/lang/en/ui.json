@@ -20,6 +20,7 @@
       "toggle-overlay-combat-log": "Show Combat Log",
       "toggle-overlay-menu": "Show In-game Settings",
       "reset-windows": "Reset Windows",
+      "export-diagnostics": "Export Diagnostics",
       "about": "About",
       "quit": "Quit"
     },
@@ -238,7 +239,11 @@
       "damage-while-active": "Damage Taken While Active",
       "damage-while-active-hint": "Damage enemies dealt to this member while the status was active. A hit counts for every status active at the time."
     },
-    "overlay-cleared": "Cleared. Counting starts again from the next hit; the data so far was saved as a log."
+    "overlay-cleared": "Cleared. Counting starts again from the next hit; the data so far was saved as a log.",
+    "diagnostics": {
+      "exported": "Diagnostics saved: {{path}}",
+      "failed": "Diagnostics export failed: {{error}}"
+    }
   },
   "characters": {
     "Pl0000": "Gran",

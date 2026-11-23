@@ -61,6 +61,9 @@ pub fn spawn() {
                                 Ok(OverlayMessage::ToggleWindow(window)) => {
                                     request_window_toggle(window)
                                 }
+                                Ok(OverlayMessage::DiagnosticsRequest) => {
+                                    crate::diagnostics::request_report()
+                                }
                                 Err(error) => warn!("Bad overlay message: {error}"),
                             }
                         }

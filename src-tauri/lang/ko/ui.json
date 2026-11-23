@@ -20,6 +20,7 @@
       "toggle-overlay-combat-log": "전투 로그 표시",
       "toggle-overlay-menu": "게임 내 설정 화면 표시",
       "reset-windows": "창 초기화",
+      "export-diagnostics": "진단 파일 내보내기",
       "about": "정보",
       "quit": "종료"
     },
@@ -238,7 +239,11 @@
       "damage-while-active": "지속 중 받은 피해",
       "damage-while-active-hint": "이 상태가 지속되는 동안 이 파티원이 받은 적의 피해입니다. 여러 상태가 동시에 있으면 같은 피해가 각 상태에 모두 집계됩니다."
     },
-    "overlay-cleared": "초기화했습니다. 다음 공격부터 다시 집계합니다. 이전 데이터는 로그로 저장했습니다."
+    "overlay-cleared": "초기화했습니다. 다음 공격부터 다시 집계합니다. 이전 데이터는 로그로 저장했습니다.",
+    "diagnostics": {
+      "exported": "진단 파일을 저장했습니다: {{path}}",
+      "failed": "진단 파일 내보내기 실패: {{error}}"
+    }
   },
   "characters": {
     "Pl0000": "그란",

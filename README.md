@@ -87,7 +87,7 @@ Automatic updates are disabled in the Kaguya Edition so an upstream release cann
 
 You can uninstall GBFR Logs Kaguya Edition the normal way through the Control Panel or by running the uninstall script in the folder where you installed it to. You may also want to remove these folders.
 
-- `%AppData%\gbfr-logs-awa`
+- `%AppData%\gbfr-logs-kaguya` (moved from `%AppData%\gbfr-logs-awa` on first start)
 
 > Q: How do I add/edit my language?
 

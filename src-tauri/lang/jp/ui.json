@@ -20,6 +20,7 @@
       "toggle-overlay-combat-log": "戦闘ログを表示",
       "toggle-overlay-menu": "ゲーム内設定画面を表示",
       "reset-windows": "ウィンドウをリセット",
+      "export-diagnostics": "診断ファイルを書き出す",
       "about": "このアプリについて",
       "quit": "終了"
     },
@@ -238,7 +239,11 @@
       "damage-while-active": "効果中の被ダメージ",
       "damage-while-active-hint": "この状態の効果中にこのメンバーが受けた敵からのダメージです。複数の状態が同時にある場合、同じダメージがそれぞれに計上されます。"
     },
-    "overlay-cleared": "クリアしました。次のヒットから集計し直します。それまでのデータはログに保存しました。"
+    "overlay-cleared": "クリアしました。次のヒットから集計し直します。それまでのデータはログに保存しました。",
+    "diagnostics": {
+      "exported": "診断ファイルを保存しました：{{path}}",
+      "failed": "診断ファイルの書き出しに失敗しました：{{error}}"
+    }
   },
   "characters": {
     "Pl0000": "グラン",

@@ -22,6 +22,7 @@ export const NativeLabels = () => {
       },
       toggleOverlayMenu: t("ui.tray.toggle-overlay-menu"),
       resetWindows: t("ui.tray.reset-windows"),
+      exportDiagnostics: t("ui.tray.export-diagnostics"),
       about: t("ui.tray.about"),
       quit: t("ui.tray.quit"),
       logsTitle: t("ui.windows.logs"),

@@ -1,7 +1,6 @@
 #![recursion_limit = "256"]
 
 use std::io::Write;
-use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use futures::sink::SinkExt;
@@ -10,6 +9,7 @@ use interprocess::os::windows::named_pipe::{pipe_mode, PipeListenerOptions, Pipe
 use log::{info, warn};
 use tokio::sync::broadcast;
 
+mod diagnostics;
 mod event;
 mod hooks;
 #[cfg(feature = "overlay")]
@@ -123,13 +123,11 @@ async fn setup() {
 }
 
 fn initialize_logger() -> anyhow::Result<()> {
-    let application_data_dir = dirs::data_dir().context("Could not find data folder")?;
-    let mut log_file = PathBuf::new();
-
-    log_file.push(application_data_dir);
-    log_file.push("gbfr-logs-awa");
-    std::fs::create_dir_all(log_file.as_path())?;
-    log_file.push("gbfr-logs-awa.txt");
+    // The app migrates the old folder before injecting; this covers an older app.
+    let _ = protocol::paths::migrate_legacy_data_dir();
+    let data_dir = protocol::paths::data_dir().context("Could not find data folder")?;
+    std::fs::create_dir_all(&data_dir)?;
+    let log_file = data_dir.join(protocol::paths::HOOK_LOG_FILE);
 
     fern::Dispatch::new()
         .format(|out, message, record| {

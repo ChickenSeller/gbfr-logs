@@ -21,12 +21,12 @@ mod damage;
 mod damage_details;
 mod death;
 pub mod enemy_hp;
-mod statuses;
 mod ffi;
 mod globals;
 mod player;
 mod quest;
 mod sba;
+pub mod statuses;
 
 type GetEntityHashID0x58 = unsafe extern "system" fn(*const usize, *const u32) -> *const usize;
 
@@ -73,21 +73,33 @@ static PROBED_PARENT_ACTORS: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
 pub fn setup_hooks(tx: event::Tx) -> Result<()> {
     let process = Process::with_name("granblue_fantasy_relink.exe")?;
 
+    crate::diagnostics::setup(process.base_address, tx.clone());
+
     match damage_details::setup(&process) {
-        Ok(()) => info!("Detailed damage hooks enabled"),
-        Err(error) => warn!("Detailed damage hooks unavailable: {error}"),
+        Ok(()) => {
+            info!("Detailed damage hooks enabled");
+            crate::diagnostics::note("damage details", "enabled");
+        }
+        Err(error) => {
+            warn!("Detailed damage hooks unavailable: {error}");
+            crate::diagnostics::note("damage details", format!("unavailable: {error}"));
+        }
     }
 
     statuses::setup(process.base_address, tx.clone());
 
     // Core DPS tracking. The main damage signature is still stable in game 2.0.2.
     OnProcessDamageHook::new(tx.clone()).setup(&process)?;
+    crate::diagnostics::note("damage hook", "installed");
 
     // Game 2.0.2 still keeps player names in the per-actor identity snapshot, but
     // the function that refreshes it moved. This hook deliberately reads only the
     // stable identity fields; equipment remains disabled until its layout is known.
     match OnLoadPlayerIdentityHook::new(tx.clone()).setup(&process) {
-        Ok(()) => info!("Player identity refresh hook enabled"),
+        Ok(()) => {
+            info!("Player identity refresh hook enabled");
+            crate::diagnostics::note("player identity hook", "enabled");
+        }
         Err(error) => warn!(
             "Player identity refresh hook unavailable; using direct actor identity reads: {error}"
         ),
@@ -96,8 +108,14 @@ pub fn setup_hooks(tx: event::Tx) -> Result<()> {
     // This hooks the actual reward/result setup rather than the generic result
     // input operation, which is also reused by fall recovery and boss mechanics.
     match OnBattleEndHook::new(tx).setup(&process) {
-        Ok(()) => info!("Game 2.0.2 result reward hook enabled"),
-        Err(error) => warn!("Battle-end hook unavailable; using inactivity fallback: {error}"),
+        Ok(()) => {
+            info!("Game 2.0.2 result reward hook enabled");
+            crate::diagnostics::note("battle end hook", "enabled");
+        }
+        Err(error) => {
+            warn!("Battle-end hook unavailable; using inactivity fallback: {error}");
+            crate::diagnostics::note("battle end hook", format!("unavailable: {error}"));
+        }
     }
 
     // The 2.0 update changed the layouts and signatures used by the auxiliary hooks.
@@ -304,6 +322,11 @@ fn probe_parent_offsets(source_type_id: u32, source: *const usize) {
 /// Reads hook-owned game memory without letting an invalid pointer raise an
 /// in-process access violation. This is intentionally used for version-fragile
 /// cross-object links only; a failed or partial read simply disables grouping.
+/// `read_process_value` for the rest of the crate (diagnostics).
+pub fn read_value<T: Copy>(address: *const T) -> Option<T> {
+    read_process_value(address)
+}
+
 pub(super) fn read_process_value<T: Copy>(address: *const T) -> Option<T> {
     if address.is_null() {
         return None;

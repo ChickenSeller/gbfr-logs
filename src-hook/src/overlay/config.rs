@@ -18,7 +18,7 @@ pub const ENEMY_HP_COUNT_RANGE: (u32, u32) = (1, 10);
 pub const COMBAT_LOG_HEIGHT_RANGE: (f32, f32) = (60.0, 900.0);
 
 pub fn data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|dir| dir.join("gbfr-logs-awa"))
+    protocol::paths::data_dir()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

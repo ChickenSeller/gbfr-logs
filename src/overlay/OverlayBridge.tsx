@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api";
 import { writeText } from "@tauri-apps/api/clipboard";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 
@@ -146,6 +147,14 @@ export const OverlayBridge = () => {
         }
       }),
       listen("encounter-saved", () => notifyOverlay(t("ui.successful-save"), "Success")),
+      listen("diagnostics-exported", (event: { payload: string }) => {
+        toast.success(t("ui.diagnostics.exported", { path: event.payload }));
+        notifyOverlay(t("ui.diagnostics.exported", { path: event.payload }), "Success");
+      }),
+      listen("diagnostics-export-failed", (event: { payload: string }) => {
+        toast.error(t("ui.diagnostics.failed", { error: event.payload }));
+        notifyOverlay(t("ui.diagnostics.failed", { error: event.payload }), "Error");
+      }),
       listen("encounter-saved-error", (event: { payload: string }) =>
         notifyOverlay(t("ui.unsuccessful-save", { error: event.payload }), "Error")
       ),

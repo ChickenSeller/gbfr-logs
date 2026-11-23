@@ -30,6 +30,7 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::FramedRead;
 
 mod db;
+mod diagnostics;
 mod overlay;
 mod parser;
 
@@ -494,6 +495,9 @@ fn connect_and_run_parser(app: AppHandle) {
                                         | protocol::Message::DamageTaken(event) => {
                                             state.on_damage_event(event);
                                         }
+                                        protocol::Message::DiagnosticsReport(report) => {
+                                            diagnostics::deliver_probe(report);
+                                        }
                                         protocol::Message::OverlayClearRequest => {
                                             state.clear_live_encounter();
                                         }
@@ -585,6 +589,7 @@ fn system_tray_with_menu() -> SystemTray {
     let overlay_menu =
         CustomMenuItem::new("toggle_overlay_menu", TOGGLE_OVERLAY_MENU_DEFAULT).selected();
     let reset_windows = CustomMenuItem::new("reset_windows", "Reset Windows");
+    let export_diagnostics = CustomMenuItem::new("export_diagnostics", "Export Diagnostics");
     let about = CustomMenuItem::new("about", "About");
     let quit = CustomMenuItem::new("quit", "Quit");
 
@@ -600,6 +605,7 @@ fn system_tray_with_menu() -> SystemTray {
     let menu = menu
         .add_item(overlay_menu)
         .add_item(reset_windows)
+        .add_item(export_diagnostics)
         .add_item(about)
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(quit);
@@ -617,6 +623,7 @@ struct NativeLabels {
     overlay_windows: std::collections::HashMap<String, String>,
     toggle_overlay_menu: String,
     reset_windows: String,
+    export_diagnostics: String,
     about: String,
     quit: String,
     logs_title: String,
@@ -695,6 +702,7 @@ fn set_native_labels(app: AppHandle, about_title: State<AboutTitle>, labels: Nat
     for (id, title) in [
         ("open_logs", labels.open_logs),
         ("reset_windows", labels.reset_windows),
+        ("export_diagnostics", labels.export_diagnostics),
         ("about", labels.about),
         ("quit", labels.quit),
     ] {
@@ -739,6 +747,27 @@ fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
         SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
             "open_logs" => toggle_window_visibility(handle, "logs", Some(should_focus)),
             "about" => show_about_window(handle),
+            "export_diagnostics" => {
+                let app = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let result = diagnostics::export(app.clone()).await;
+                    let window = app.get_window("logs");
+                    match result {
+                        Ok(path) => {
+                            diagnostics::reveal(&path);
+                            if let Some(window) = window {
+                                let _ = window.emit("diagnostics-exported", path.display().to_string());
+                            }
+                        }
+                        Err(error) => {
+                            log::error!("Diagnostics export failed: {error:#}");
+                            if let Some(window) = window {
+                                let _ = window.emit("diagnostics-export-failed", format!("{error:#}"));
+                            }
+                        }
+                    }
+                });
+            }
             "toggle_overlay_menu" => {
                 let feed = handle.state::<overlay::OverlayFeed>().inner().clone();
                 tauri::async_runtime::spawn(async move { feed.toggle_menu().await });
@@ -826,6 +855,14 @@ fn show_about_window(handle: &AppHandle) {
 
 fn main() {
     info!("Starting application..");
+
+    // Kaguya Edition renamed the data folder (gbfr-logs-awa -> gbfr-logs-kaguya). Done before
+    // the hook is injected, so both find the moved settings and logs.
+    match protocol::paths::migrate_legacy_data_dir() {
+        Ok(true) => info!("Moved the data folder to {}", protocol::paths::DATA_DIR_NAME),
+        Ok(false) => {}
+        Err(error) => log::warn!("Could not move the old data folder: {error}"),
+    }
 
     // Setup the database.
     db::setup_db().expect("Failed to setup database");

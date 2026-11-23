@@ -94,7 +94,7 @@ pub fn reset() {
 }
 
 /// Class name from a vtable's RTTI (complete object locator at `vtable - 8`).
-fn class_name(vtable: usize) -> Option<String> {
+pub(super) fn class_name(vtable: usize) -> Option<String> {
     let cache = CLASS_NAMES.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(name) = cache.lock().ok()?.get(&vtable) {
         return name.clone();
@@ -230,4 +230,52 @@ fn poll(tx: &event::Tx) {
     for index in gone.into_iter().rev() {
         actors.remove(index);
     }
+}
+
+/// Live state of the tracked party members, for the diagnostics export: their classes, the
+/// `ExStatus` check and each active status with the raw fields around its timers.
+pub fn probe() -> serde_json::Value {
+    use serde_json::json;
+    let actors = ACTORS.lock().unwrap_or_else(|e| e.into_inner());
+    let raw = |status: usize| {
+        json!({
+            "type_0x40": read_process_value::<u32>((status + 0x40) as *const u32),
+            "u32_0x4c": read_process_value::<u32>((status + 0x4C) as *const u32),
+            "u32_0x50": read_process_value::<u32>((status + 0x50) as *const u32),
+            "u8_0x5c": read_process_value::<u8>((status + 0x5C) as *const u8),
+            "f32_0x7c": read_process_value::<f32>((status + 0x7C) as *const f32),
+            "f32_0x80": read_process_value::<f32>((status + 0x80) as *const f32),
+        })
+    };
+    serde_json::Value::Array(
+        actors
+            .iter()
+            .map(|actor| {
+                let statuses: Vec<_> = actor
+                    .active
+                    .iter()
+                    .map(|(address, status)| {
+                        json!({
+                            "address": format!("{address:#x}"),
+                            "class": status.class_name,
+                            "type_id": status.type_id,
+                            "source_type": status.source_type.map(|t| format!("{t:#x}")),
+                            "raw": raw(*address),
+                        })
+                    })
+                    .collect();
+                json!({
+                    "actor_index": actor.actor_index,
+                    "actor_type": format!("{:#x}", actor.actor_type),
+                    "instance": format!("{:#x}", actor.instance),
+                    "instance_class": read_process_value::<usize>(actor.instance as *const usize)
+                        .and_then(class_name),
+                    "ex_status": ex_status(actor.instance).map(|address| format!("{address:#x}")),
+                    "hp_0x160": read_process_value::<i64>((actor.instance + 0x160) as *const i64),
+                    "hp_0x168": read_process_value::<i64>((actor.instance + 0x168) as *const i64),
+                    "statuses": statuses,
+                })
+            })
+            .collect(),
+    )
 }

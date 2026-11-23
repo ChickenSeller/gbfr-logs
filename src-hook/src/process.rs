@@ -165,6 +165,65 @@ impl Process {
         ))
     }
 
+    /// Address of the one instruction that loads the RTTI type descriptor of `decorated_name`
+    /// (e.g. `.?AVIStatusAttackBuff@@`) with a RIP-relative `lea`.
+    ///
+    /// Functions that `dynamic_cast` to an interface load its type descriptor, so this finds
+    /// them by the class name rather than a code signature or offset that moves with updates.
+    /// Fails if there is no such instruction or more than one.
+    pub fn find_rtti_type_load(&self, decorated_name: &str) -> anyhow::Result<usize> {
+        const IMAGE_SCN_MEM_EXECUTE: u32 = 0x2000_0000;
+        let view = unsafe { PeView::module(self.module_handle.0 as *const u8) };
+        let sections: Vec<_> = view.section_headers().iter().collect();
+
+        // The descriptor is `{ vtable, spare, name[] }`: the name starts 0x10 into it.
+        let mut needle = decorated_name.as_bytes().to_vec();
+        needle.push(0);
+        let descriptor_rva = sections
+            .iter()
+            .filter(|section| section.Characteristics & IMAGE_SCN_MEM_EXECUTE == 0)
+            .find_map(|section| {
+                let bytes = view.get_section_bytes(section).ok()?;
+                let position = bytes
+                    .windows(needle.len())
+                    .position(|window| window == needle.as_slice())?;
+                (section.VirtualAddress as usize + position).checked_sub(0x10)
+            })
+            .ok_or_else(|| anyhow!("RTTI type descriptor not found: {decorated_name}"))?;
+
+        // `lea r64, [rip + disp32]`: REX.W (+R), 8D, ModRM with mod 00 and rm 101.
+        let mut loads = Vec::new();
+        for section in sections
+            .iter()
+            .filter(|section| section.Characteristics & IMAGE_SCN_MEM_EXECUTE != 0)
+        {
+            let Ok(bytes) = view.get_section_bytes(section) else {
+                continue;
+            };
+            let start = section.VirtualAddress as i64;
+            for i in 0..bytes.len().saturating_sub(7) {
+                if bytes[i + 1] != 0x8D || bytes[i] & 0xFB != 0x48 || bytes[i + 2] & 0xC7 != 0x05 {
+                    continue;
+                }
+                let disp =
+                    i32::from_le_bytes([bytes[i + 3], bytes[i + 4], bytes[i + 5], bytes[i + 6]]);
+                if start + i as i64 + 7 + disp as i64 == descriptor_rva as i64 {
+                    loads.push(self.base_address + start as usize + i);
+                }
+            }
+        }
+        match loads.as_slice() {
+            [load] => Ok(*load),
+            [] => Err(anyhow!(
+                "No code loads the RTTI type descriptor {decorated_name}"
+            )),
+            _ => Err(anyhow!(
+                "{} instructions load the RTTI type descriptor {decorated_name}",
+                loads.len()
+            )),
+        }
+    }
+
     /// Searches and returns the address where the signature itself begins.
     ///
     /// `search_address` resolves a captured call target, while this is intended for

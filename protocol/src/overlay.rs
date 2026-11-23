@@ -27,6 +27,8 @@ pub enum OverlayMessage {
     ToggleMenu,
     /// Show or hide one of the in-game windows.
     ToggleWindow(OverlayWindow),
+    /// Asks the hook for a runtime probe, answered with `Message::DiagnosticsReport`.
+    DiagnosticsRequest,
 }
 
 /// The in-game windows that can be shown or hidden on their own.

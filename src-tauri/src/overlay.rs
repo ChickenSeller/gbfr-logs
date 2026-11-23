@@ -130,6 +130,15 @@ impl OverlayFeed {
             .await;
     }
 
+    /// Asks the hook for its runtime probe (answered with `Message::DiagnosticsReport`).
+    pub async fn request_diagnostics(&self) {
+        self.connection
+            .lock()
+            .await
+            .send(&OverlayMessage::DiagnosticsRequest)
+            .await;
+    }
+
     /// Shows or hides one of the in-game windows.
     pub async fn toggle_window(&self, window: protocol::OverlayWindow) {
         self.connection

@@ -20,6 +20,7 @@
       "toggle-overlay-combat-log": "顯示戰鬥日誌",
       "toggle-overlay-menu": "顯示遊戲內設定介面",
       "reset-windows": "重設視窗",
+      "export-diagnostics": "匯出診斷檔案",
       "about": "關於",
       "quit": "結束"
     },
@@ -238,7 +239,11 @@
       "damage-while-active": "期間承受傷害",
       "damage-while-active-hint": "該狀態生效期間，此隊員受到的敵人傷害。同時有多個狀態時，同一次傷害會分別計入每個狀態。"
     },
-    "overlay-cleared": "已清空，從下一次命中重新統計。之前的資料已儲存為日誌。"
+    "overlay-cleared": "已清空，從下一次命中重新統計。之前的資料已儲存為日誌。",
+    "diagnostics": {
+      "exported": "診斷檔案已儲存：{{path}}",
+      "failed": "匯出診斷檔案失敗：{{error}}"
+    }
   },
   "characters": {
     "Pl0000": "葛蘭",

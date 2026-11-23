@@ -28,6 +28,7 @@ use std::{
 pub use bincode;
 
 mod overlay;
+pub mod paths;
 pub use overlay::*;
 
 use serde::{Deserialize, Serialize};
@@ -322,6 +323,8 @@ pub enum Message {
     OverlayUiState(OverlayUiState),
     /// The player asked to clear the in-game windows and count from now on. Never logged.
     OverlayClearRequest,
+    /// Runtime probe of the hook (as JSON) for a diagnostics export. Never logged.
+    DiagnosticsReport(String),
 }
 
 /// Damage event layout used through Awa Edition 1.8.4.

@@ -8,7 +8,7 @@ use std::{
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{anyhow, Result};
-use log::info;
+use log::{info, warn};
 use protocol::{DamageDetails, DamageModifierKind, DamageStatusContribution};
 use retour::static_detour;
 
@@ -41,8 +41,14 @@ static_detour! {
     );
 }
 
-const ATTACK_MULTIPLIER_RVA: usize = 0xBD9630;
-const DEFENSE_STATUS_RVA: usize = 0xBD9A40;
+/// Known locations, tried when the RTTI search below fails: game 2.0.2, then earlier 2.0.
+const ATTACK_MULTIPLIER_RVAS: [usize; 2] = [0xBD3B60, 0xBD9630];
+const DEFENSE_STATUS_RVAS: [usize; 2] = [0xBD3F70, 0xBD9A40];
+/// Each function is the only code that `dynamic_cast`s statuses to this interface.
+const ATTACK_MULTIPLIER_INTERFACE: &str = ".?AVIStatusAttackBuff@@";
+const DEFENSE_STATUS_INTERFACE: &str = ".?AVIStatusDeffenceBuff@@";
+/// How far before the type descriptor load the function may start.
+const MAX_PROLOGUE_DISTANCE: usize = 0x800;
 const ATTACK_MULTIPLIER_PREFIX: &[u8] = &[
     0x55, 0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x56, 0x57, 0x53, 0x48, 0x81, 0xEC, 0x28,
     0x01, 0x00, 0x00,
@@ -147,15 +153,20 @@ thread_local! {
 
 pub fn setup(process: &Process) -> Result<()> {
     let _ = GAME_BASE.set(process.base_address);
-    let attack_address = process.base_address + ATTACK_MULTIPLIER_RVA;
-    let defense_address = process.base_address + DEFENSE_STATUS_RVA;
-
-    if !matches_prefix(attack_address, ATTACK_MULTIPLIER_PREFIX) {
-        return Err(anyhow!("attack multiplier function prefix mismatch"));
-    }
-    if !matches_prefix(defense_address, DEFENSE_STATUS_PREFIX) {
-        return Err(anyhow!("defense status function prefix mismatch"));
-    }
+    let attack_address = locate_function(
+        process,
+        ATTACK_MULTIPLIER_INTERFACE,
+        ATTACK_MULTIPLIER_PREFIX,
+        &ATTACK_MULTIPLIER_RVAS,
+    )
+    .ok_or_else(|| anyhow!("attack multiplier function not found"))?;
+    let defense_address = locate_function(
+        process,
+        DEFENSE_STATUS_INTERFACE,
+        DEFENSE_STATUS_PREFIX,
+        &DEFENSE_STATUS_RVAS,
+    )
+    .ok_or_else(|| anyhow!("defense status function not found"))?;
 
     unsafe {
         let attack: AttackMultiplierFunc = std::mem::transmute(attack_address);
@@ -185,6 +196,49 @@ pub fn setup(process: &Process) -> Result<()> {
     info!("Damage detail functions: attack={attack_address:#x}, defense={defense_address:#x}");
 
     Ok(())
+}
+
+/// Finds a status function: first through the one instruction that loads its interface's RTTI
+/// type descriptor, walking back to the expected prologue; then at known offsets. Either way
+/// the prologue bytes must match.
+fn locate_function(
+    process: &Process,
+    interface: &str,
+    prologue: &[u8],
+    known_rvas: &[usize],
+) -> Option<usize> {
+    match process.find_rtti_type_load(interface) {
+        Ok(load) => {
+            let start = (0..MAX_PROLOGUE_DISTANCE)
+                .map(|distance| load - distance)
+                .find(|address| matches_prefix(*address, prologue));
+            if let Some(start) = start {
+                info!(
+                    "Found the {interface} user at RVA {:#x} through RTTI",
+                    start - process.base_address
+                );
+                crate::diagnostics::note(
+                    interface,
+                    format!("RVA {:#x} (RTTI)", start - process.base_address),
+                );
+                return Some(start);
+            }
+            warn!("No prologue before the {interface} load; trying known offsets");
+        }
+        Err(error) => warn!("{error}; trying known offsets"),
+    }
+    let found = known_rvas
+        .iter()
+        .map(|rva| process.base_address + rva)
+        .find(|address| matches_prefix(*address, prologue));
+    crate::diagnostics::note(
+        interface,
+        match found {
+            Some(address) => format!("RVA {:#x} (known offset)", address - process.base_address),
+            None => "not found".to_string(),
+        },
+    );
+    found
 }
 
 fn matches_prefix(address: usize, expected: &[u8]) -> bool {
