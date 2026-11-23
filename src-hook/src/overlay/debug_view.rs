@@ -1,4 +1,5 @@
-//! Experimental debug view: marks tracked enemies and party members in the 3D scene.
+//! Experimental debug view: marks enemies (every damageable one, hit or not) and party members
+//! in the 3D scene, with enemy hurtboxes and recent hit points.
 //!
 //! The game camera is the static `cCameraGame` at RVA 0x7C24860 (game 2.0.2): eye at +0x10,
 //! look-at target at +0x20, up vector at +0x30 and the vertical field of view (radians) at
@@ -6,9 +7,10 @@
 //! built from eye/target/up and points are projected with the field of view and the screen's
 //! aspect ratio, so a wrong guess shows up as markers drifting off their actors.
 
-use hudhook::imgui::{ImColor32, Ui};
+use hudhook::imgui::{DrawListMut, ImColor32, Ui};
 use protocol::OverlayState;
 
+use crate::hooks::hurtboxes::Shape;
 use crate::hooks::read_value;
 
 const CAMERA_RVA: usize = 0x7C2_4860;
@@ -25,6 +27,13 @@ const ENEMY_COLOR: ImColor32 = ImColor32::from_rgba(255, 90, 80, 230);
 const PARTY_COLOR: ImColor32 = ImColor32::from_rgba(90, 200, 255, 230);
 const SHADOW_COLOR: ImColor32 = ImColor32::from_rgba(0, 0, 0, 200);
 const FACING_COLOR: ImColor32 = ImColor32::from_rgba(255, 220, 60, 230);
+const HURTBOX_COLOR: ImColor32 = ImColor32::from_rgba(80, 255, 120, 200);
+const HURTBOX_OFF_COLOR: ImColor32 = ImColor32::from_rgba(170, 170, 170, 70);
+/// Damageable things that are neither enemies nor players: breakable objects and the like.
+const NPC_COLOR: ImColor32 = ImColor32::from_rgba(230, 200, 255, 220);
+const OBJECT_COLOR: ImColor32 = ImColor32::from_rgba(255, 170, 60, 210);
+/// Segments per full circle of a wireframe.
+const RING_SEGMENTS: usize = 24;
 /// Length of an enemy's facing arrow, in world units.
 const FACING_LENGTH: f32 = 5.0;
 /// How long a hit point stays on screen, fading out.
@@ -120,14 +129,26 @@ impl Camera {
 
 /// Draws a marker under every tracked enemy and party member.
 pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
-    let Some(camera) = Camera::read(game_base, ui.io().display_size) else {
+    let camera = Camera::read(game_base, ui.io().display_size);
+    let damageable = crate::hooks::hurtboxes::actors();
+    let party = crate::hooks::statuses::party_instances();
+    let (entities, characters) = crate::hooks::entities::characters();
+    draw_status(
+        ui,
+        camera.is_some(),
+        &damageable,
+        party.len(),
+        entities,
+        characters.len(),
+    );
+    let Some(camera) = camera else {
         return;
     };
     let draw = ui.get_background_draw_list();
     drop(draw);
     draw_hits(ui, &camera, state);
     let draw = ui.get_background_draw_list();
-    let mut mark = |instance: usize, label: &str, color: ImColor32| {
+    let mark = |instance: usize, label: &str, color: ImColor32| {
         let Some(feet) = read_vec3(instance + ACTOR_POSITION) else {
             return;
         };
@@ -155,21 +176,63 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
         draw.add_text([top[0] + 4.0, top[1]], color, label);
     };
 
-    for enemy in crate::hooks::enemy_hp::snapshot() {
-        let name = state
-            .and_then(|state| {
-                state
+    // Every enemy that can take damage, hit or not; names come from the meter once one was hit.
+    let tracked = crate::hooks::enemy_hp::snapshot();
+    for object in damageable
+        .iter()
+        .filter(|a| !a.enemy && !a.player && a.is_field_object())
+    {
+        let mut any = false;
+        for hurtbox in crate::hooks::hurtboxes::of(object.instance)
+            .into_iter()
+            .filter(|h| h.shape.is_body_sized())
+        {
+            let color = if hurtbox.enabled {
+                OBJECT_COLOR
+            } else {
+                HURTBOX_OFF_COLOR
+            };
+            draw_shape(&draw, &camera, &hurtbox.shape, color);
+            any = true;
+        }
+        if any {
+            mark(object.instance, &object.class, OBJECT_COLOR);
+        }
+    }
+    for actor in damageable.iter().filter(|actor| actor.enemy) {
+        let instance = actor.instance;
+        let name = tracked
+            .iter()
+            .find(|enemy| enemy.id == instance)
+            .and_then(|enemy| {
+                state?
                     .enemies
                     .iter()
                     .find(|e| e.type_hash == enemy.type_hash)
+                    .map(|e| e.name.clone())
             })
-            .map(|e| e.name.clone())
-            .unwrap_or_else(|| format!("{:08x}", enemy.type_hash));
-        mark(enemy.id, &name, ENEMY_COLOR);
+            .unwrap_or_else(|| actor.class.clone());
+        let actor = actor.clone();
+        let label = match hp_percent(instance) {
+            Some(percent) => format!("{name} {percent:.0}%"),
+            None => name,
+        };
+        for hurtbox in crate::hooks::hurtboxes::of(instance)
+            .into_iter()
+            .filter(|h| h.shape.is_body_sized())
+        {
+            let color = if hurtbox.enabled {
+                HURTBOX_COLOR
+            } else {
+                HURTBOX_OFF_COLOR
+            };
+            draw_shape(&draw, &camera, &hurtbox.shape, color);
+        }
+        mark(instance, &label, ENEMY_COLOR);
         // The facing the hit points turn with, to check it against the body.
         if let (Some(feet), Some(forward)) = (
-            read_vec3(enemy.id + ACTOR_POSITION),
-            crate::hooks::hits::forward(enemy.id),
+            read_vec3(instance + ACTOR_POSITION),
+            crate::hooks::hits::forward(instance),
         ) {
             let lift = 0.5;
             let from = [feet[0], feet[1] + lift, feet[2]];
@@ -184,12 +247,213 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
             }
         }
     }
-    for (actor_index, instance) in crate::hooks::statuses::party_instances() {
+    for &(actor_index, instance) in &party {
         let name = state
             .and_then(|state| state.players.iter().find(|p| p.index == actor_index))
             .map(|p| p.name.clone())
             .unwrap_or_else(|| format!("#{actor_index}"));
         mark(instance, &name, PARTY_COLOR);
+    }
+    // Player characters the party list does not know, e.g. outside quests.
+    for player in damageable
+        .iter()
+        .filter(|a| a.player && !party.iter().any(|(_, instance)| *instance == a.instance))
+    {
+        mark(player.instance, &player.class, PARTY_COLOR);
+    }
+    // Everyone else on the field: NPCs, and characters that cannot take damage right now.
+    use crate::hooks::entities::Kind;
+    // One townsperson can be several entities (body and behaviour) at one spot: mark it once.
+    let mut marked: Vec<Vec3> = Vec::new();
+    for character in &characters {
+        let instance = character.instance;
+        if party.iter().any(|(_, i)| *i == instance)
+            || damageable
+                .iter()
+                .any(|a| a.instance == instance && (a.enemy || a.player))
+        {
+            continue;
+        }
+        if let Some(feet) = read_vec3(instance + ACTOR_POSITION) {
+            if marked
+                .iter()
+                .any(|p| dot(sub(*p, feet), sub(*p, feet)) < 0.3 * 0.3)
+            {
+                continue;
+            }
+            marked.push(feet);
+        }
+        let color = match character.kind {
+            Kind::Player => PARTY_COLOR,
+            Kind::Npc => NPC_COLOR,
+            Kind::Enemy => ENEMY_COLOR,
+        };
+        mark(instance, &character.class, color);
+    }
+}
+
+/// One line in the top-left corner saying what the view can see, so an empty scene can be told
+/// apart from a camera it cannot read.
+fn draw_status(
+    ui: &Ui,
+    camera_ok: bool,
+    damageable: &[crate::hooks::hurtboxes::DamageableActor],
+    party: usize,
+    entities: usize,
+    characters: usize,
+) {
+    let enemies = damageable.iter().filter(|a| a.enemy).count();
+    let players = damageable.iter().filter(|a| a.player).count();
+    let others = damageable.len() - enemies - players;
+    let text = format!(
+        "调试视图  相机：{}  可受击：敌人 {enemies} / 玩家 {players} / 其他 {others}  队员：{party}  实体表：{entities}（角色 {characters}）",
+        if camera_ok { "正常" } else { "读取失败" },
+    );
+    let draw = ui.get_background_draw_list();
+    draw.add_text([11.0, 9.0], SHADOW_COLOR, &text);
+    draw.add_text([10.0, 8.0], ImColor32::from_rgba(255, 255, 255, 220), &text);
+}
+
+/// Actor HP (i64 at +0x160, max at +0x168) as a percentage.
+fn hp_percent(instance: usize) -> Option<f64> {
+    let hp = read_value::<i64>((instance + 0x160) as *const i64)?;
+    let max = read_value::<i64>((instance + 0x168) as *const i64)?;
+    (max > 0 && (0..=max).contains(&hp)).then(|| hp as f64 * 100.0 / max as f64)
+}
+
+fn add(a: Vec3, b: Vec3) -> Vec3 {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn scale(v: Vec3, s: f32) -> Vec3 {
+    [v[0] * s, v[1] * s, v[2] * s]
+}
+
+/// Two unit vectors perpendicular to `axis` and to each other.
+fn perpendiculars(axis: Vec3) -> (Vec3, Vec3) {
+    let hint = if axis[1].abs() < 0.9 {
+        [0.0, 1.0, 0.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let u = normalize(cross(axis, hint)).unwrap_or([1.0, 0.0, 0.0]);
+    let v = cross(axis, u);
+    (u, v)
+}
+
+/// A polyline through world points; segments with an end behind the camera are skipped.
+/// Wireframe points closer to the camera than this are not drawn: they project far off screen.
+const WIRE_NEAR: f32 = 1.0;
+
+fn polyline(draw: &DrawListMut, camera: &Camera, points: &[Vec3], color: ImColor32) {
+    let projected: Vec<Option<[f32; 2]>> = points
+        .iter()
+        .map(|p| {
+            (dot(sub(*p, camera.eye), camera.forward) > WIRE_NEAR)
+                .then(|| camera.project(*p))
+                .flatten()
+        })
+        .collect();
+    let diagonal =
+        (camera.screen[0] * camera.screen[0] + camera.screen[1] * camera.screen[1]).sqrt();
+    for pair in projected.windows(2) {
+        if let (Some(a), Some(b)) = (pair[0], pair[1]) {
+            let length = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+            if length <= diagonal {
+                draw.add_line(a, b, color).thickness(1.5).build();
+            }
+        }
+    }
+}
+
+/// An arc of radius `r` around `center` in the plane of `u` and `v`, from angle `from` to `to`.
+fn arc(
+    draw: &DrawListMut,
+    camera: &Camera,
+    center: Vec3,
+    (u, v): (Vec3, Vec3),
+    r: f32,
+    (from, to): (f32, f32),
+    color: ImColor32,
+) {
+    let steps =
+        ((RING_SEGMENTS as f32) * (to - from).abs() / std::f32::consts::TAU).ceil() as usize;
+    let steps = steps.max(2);
+    let points: Vec<Vec3> = (0..=steps)
+        .map(|i| {
+            let t = from + (to - from) * i as f32 / steps as f32;
+            add(center, add(scale(u, r * t.cos()), scale(v, r * t.sin())))
+        })
+        .collect();
+    polyline(draw, camera, &points, color);
+}
+
+fn draw_shape(draw: &DrawListMut, camera: &Camera, shape: &Shape, color: ImColor32) {
+    use std::f32::consts::{PI, TAU};
+    const X: Vec3 = [1.0, 0.0, 0.0];
+    const Y: Vec3 = [0.0, 1.0, 0.0];
+    const Z: Vec3 = [0.0, 0.0, 1.0];
+    match *shape {
+        Shape::Sphere { center, radius } => {
+            for plane in [(X, Y), (Y, Z), (Z, X)] {
+                arc(draw, camera, center, plane, radius, (0.0, TAU), color);
+            }
+        }
+        Shape::Capsule { a, b, radius } => {
+            let Some(axis) = normalize(sub(b, a)) else {
+                for plane in [(X, Y), (Y, Z), (Z, X)] {
+                    arc(draw, camera, a, plane, radius, (0.0, TAU), color);
+                }
+                return;
+            };
+            let (u, v) = perpendiculars(axis);
+            // Rings at both ends, four lines along the side, half circles over each cap.
+            arc(draw, camera, a, (u, v), radius, (0.0, TAU), color);
+            arc(draw, camera, b, (u, v), radius, (0.0, TAU), color);
+            for side in [u, v, scale(u, -1.0), scale(v, -1.0)] {
+                let offset = scale(side, radius);
+                polyline(draw, camera, &[add(a, offset), add(b, offset)], color);
+            }
+            let back = scale(axis, -1.0);
+            for side in [u, v] {
+                arc(draw, camera, a, (side, back), radius, (0.0, PI), color);
+                arc(draw, camera, b, (side, axis), radius, (0.0, PI), color);
+            }
+        }
+        Shape::Obb { center, axes, half } => {
+            let corner = |sx: f32, sy: f32, sz: f32| {
+                add(
+                    center,
+                    add(
+                        scale(axes[0], half[0] * sx),
+                        add(scale(axes[1], half[1] * sy), scale(axes[2], half[2] * sz)),
+                    ),
+                )
+            };
+            let signs = [-1.0, 1.0];
+            for &s1 in &signs {
+                for &s2 in &signs {
+                    polyline(
+                        draw,
+                        camera,
+                        &[corner(-1.0, s1, s2), corner(1.0, s1, s2)],
+                        color,
+                    );
+                    polyline(
+                        draw,
+                        camera,
+                        &[corner(s1, -1.0, s2), corner(s1, 1.0, s2)],
+                        color,
+                    );
+                    polyline(
+                        draw,
+                        camera,
+                        &[corner(s1, s2, -1.0), corner(s1, s2, 1.0)],
+                        color,
+                    );
+                }
+            }
+        }
     }
 }
 

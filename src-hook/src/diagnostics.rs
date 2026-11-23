@@ -122,6 +122,12 @@ fn enemy_floats() -> Value {
                 json!({
                     "type_hash": format!("{hash:#x}"),
                     "floats": floats(instance, ENEMY_FLOATS),
+                    "ex_damage": crate::hooks::rtti::base_offset(instance, "ExDamage")
+                        .map(|offset| format!("+{offset:#x}")),
+                    "hurtboxes": crate::hooks::hurtboxes::of(instance)
+                        .iter()
+                        .map(|hurtbox| format!("{hurtbox:?}"))
+                        .collect::<Vec<_>>(),
                 })
             })
             .collect(),

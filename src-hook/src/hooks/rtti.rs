@@ -44,7 +44,7 @@ fn bases_of(vtable: usize) -> Option<Vec<(String, usize)>> {
     }
     let hierarchy = base + read_process_value::<u32>((locator + 0x10) as *const u32)? as usize;
     let count = read_process_value::<u32>((hierarchy + 8) as *const u32)? as usize;
-    if count == 0 || count > 256 {
+    if count == 0 || count > 1024 {
         return None;
     }
     let array = base + read_process_value::<u32>((hierarchy + 0x0C) as *const u32)? as usize;
@@ -64,6 +64,34 @@ fn bases_of(vtable: usize) -> Option<Vec<(String, usize)>> {
         cache.insert(vtable, bases.clone());
     }
     Some(bases)
+}
+
+/// The game's base address, once `setup` ran.
+pub fn game_base() -> Option<usize> {
+    GAME_BASE.get().copied()
+}
+
+/// The object a sub-object (such as a mix-in base) belongs to, from the offset recorded in its
+/// vtable's complete object locator.
+pub fn complete_object(sub_object: usize) -> Option<usize> {
+    let vtable = read_process_value::<usize>(sub_object as *const usize)?;
+    let locator = read_process_value::<usize>(vtable.checked_sub(8)? as *const usize)?;
+    if read_process_value::<u32>(locator as *const u32)? != 1 {
+        return None;
+    }
+    let offset = read_process_value::<u32>((locator + 4) as *const u32)? as usize;
+    sub_object.checked_sub(offset)
+}
+
+/// Undecorated class name of `instance` (the first entry of its class hierarchy).
+pub fn class_name(instance: usize) -> Option<String> {
+    let vtable = read_process_value::<usize>(instance as *const usize)?;
+    bases_of(vtable)?.into_iter().next().map(|(name, _)| name)
+}
+
+/// Whether `instance` derives from `name`.
+pub fn has_base(instance: usize, name: &str) -> bool {
+    base_offset(instance, name).is_some()
 }
 
 /// Offset of the base class `name` (undecorated, e.g. `ExCollision`) inside `instance`.

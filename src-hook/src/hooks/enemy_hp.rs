@@ -35,7 +35,7 @@ const MAX_PLAUSIBLE_HP: i64 = 100_000_000_000;
 
 /// How long a defeated enemy stays listed.
 const DEFEATED_LINGER: Duration = Duration::from_secs(5);
-/// Enemies nobody has hit for this long are dropped, e.g. ones left behind.
+/// Enemies neither hit nor listed as damageable for this long are dropped, e.g. ones left behind.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_TRACKED: usize = 32;
 
@@ -154,6 +154,8 @@ struct Tracked {
     hp: i64,
     max_hp: i64,
     last_hit: Instant,
+    /// Last time it was hit or seen in the game's list of damageable actors.
+    last_seen: Instant,
     defeated_at: Option<Instant>,
     /// Offsets of the part ids, found when the enemy is first hit.
     part_offsets: Vec<usize>,
@@ -161,6 +163,9 @@ struct Tracked {
 }
 
 static TRACKED: Mutex<Vec<Tracked>> = Mutex::new(Vec::new());
+/// How often `snapshot` looks for enemies nobody hit yet.
+const DISCOVER_EVERY: Duration = Duration::from_millis(500);
+static LAST_DISCOVERY: Mutex<Option<Instant>> = Mutex::new(None);
 
 fn lock() -> std::sync::MutexGuard<'static, Vec<Tracked>> {
     TRACKED.lock().unwrap_or_else(|e| e.into_inner())
@@ -200,6 +205,7 @@ pub fn observe(instance: usize, type_hash: u32) -> Option<PartBreak> {
         }
         entry.hp = hp;
         entry.last_hit = now;
+        entry.last_seen = now;
         let before = std::mem::take(&mut entry.parts);
         entry.parts = read_parts(instance, &entry.part_offsets, &before);
         let broke = entry.parts.iter().find(|after| {
@@ -213,8 +219,22 @@ pub fn observe(instance: usize, type_hash: u32) -> Option<PartBreak> {
         }
         return broke.map(|part| (type_hash, part.id));
     }
+    track(&mut tracked, instance, vtable, type_hash, hp, max_hp, now);
+    None
+}
+
+/// Starts tracking an enemy: finds its part records once.
+fn track(
+    tracked: &mut Vec<Tracked>,
+    instance: usize,
+    vtable: usize,
+    type_hash: u32,
+    hp: i64,
+    max_hp: i64,
+    now: Instant,
+) {
     if tracked.len() >= MAX_TRACKED {
-        if let Some(oldest) = (0..tracked.len()).min_by_key(|&i| tracked[i].last_hit) {
+        if let Some(oldest) = (0..tracked.len()).min_by_key(|&i| tracked[i].last_seen) {
             tracked.swap_remove(oldest);
         }
     }
@@ -239,11 +259,49 @@ pub fn observe(instance: usize, type_hash: u32) -> Option<PartBreak> {
         hp,
         max_hp,
         last_hit: now,
+        last_seen: now,
         defeated_at: None,
         part_offsets,
         parts,
     });
-    None
+}
+
+/// Tracks enemies that are in the game's list of damageable actors, hit or not, and marks the
+/// tracked ones still listed as seen. Throttled to `DISCOVER_EVERY`.
+fn discover(tracked: &mut Vec<Tracked>, now: Instant) {
+    {
+        let mut last = LAST_DISCOVERY.lock().unwrap_or_else(|e| e.into_inner());
+        if last.is_some_and(|at| now.duration_since(at) < DISCOVER_EVERY) {
+            return;
+        }
+        *last = Some(now);
+    }
+    for actor in super::hurtboxes::actors() {
+        if !actor.enemy {
+            continue;
+        }
+        if let Some(entry) = tracked.iter_mut().find(|t| t.instance == actor.instance) {
+            entry.last_seen = now;
+            continue;
+        }
+        let Some(type_hash) = super::static_type_id(actor.instance) else {
+            continue;
+        };
+        if is_player(type_hash) {
+            continue;
+        }
+        let (Some((hp, max_hp)), Some(vtable)) = (
+            read_hp(actor.instance),
+            read_process_value::<usize>(actor.instance as *const usize),
+        ) else {
+            continue;
+        };
+        // Already defeated ones that linger in the list are not worth a bar.
+        if hp == 0 {
+            continue;
+        }
+        track(tracked, actor.instance, vtable, type_hash, hp, max_hp, now);
+    }
 }
 
 /// Logs each kind of damaged non-player object once (class, type, HP fields), to find objects
@@ -273,6 +331,7 @@ pub fn describe_target_once(instance: usize, type_hash: u32) {
 pub fn snapshot() -> Vec<EnemyHp> {
     let now = Instant::now();
     let mut tracked = lock();
+    discover(&mut tracked, now);
     tracked.retain_mut(|entry| {
         let still_same =
             read_process_value::<usize>(entry.instance as *const usize) == Some(entry.vtable);
@@ -290,7 +349,7 @@ pub fn snapshot() -> Vec<EnemyHp> {
             return now.duration_since(defeated_at) < DEFEATED_LINGER;
         }
         entry.defeated_at = None;
-        now.duration_since(entry.last_hit) < IDLE_TIMEOUT
+        now.duration_since(entry.last_seen) < IDLE_TIMEOUT
     });
 
     let mut order: Vec<&Tracked> = tracked.iter().collect();

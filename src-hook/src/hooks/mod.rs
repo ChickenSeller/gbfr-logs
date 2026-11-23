@@ -21,9 +21,11 @@ mod damage;
 mod damage_details;
 mod death;
 pub mod enemy_hp;
+pub mod entities;
 mod ffi;
 mod globals;
 pub mod hits;
+pub mod hurtboxes;
 mod player;
 mod quest;
 pub mod rtti;
@@ -150,6 +152,18 @@ pub fn actor_type_id(actor_ptr: *const usize) -> u32 {
     }
 
     type_id
+}
+
+/// The type id `actor_type_id` would return, read without calling game code: every actor class
+/// implements vtable slot 0x58 as `mov rax, rdx; mov dword [rdx], imm32; ret` (game 2.0.2), so
+/// the id is the immediate. Safe from any thread; `None` if the function looks different.
+pub fn static_type_id(instance: usize) -> Option<u32> {
+    let vtable = read_process_value::<usize>(instance as *const usize)?;
+    let function = read_process_value::<usize>((vtable + 0x58) as *const usize)?;
+    let code = read_process_value::<[u8; 10]>(function as *const [u8; 10])?;
+    (code[..5] == [0x48, 0x8B, 0xC2, 0xC7, 0x02] && code[9] == 0xC3)
+        .then(|| u32::from_le_bytes([code[5], code[6], code[7], code[8]]))
+        .filter(|id| *id != 0)
 }
 
 #[inline(always)]
