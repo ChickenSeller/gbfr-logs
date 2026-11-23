@@ -13,6 +13,7 @@ use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter, RenderContext};
 use log::{info, warn};
 use protocol::{Message, OverlaySettings, OverlayUiState, OverlayWindow};
 
+mod combat_log;
 mod config;
 mod cursor;
 mod damage_taken;
@@ -99,6 +100,22 @@ struct FontState {
 /// How often the overlay state is re-sent even without changes, so an app that connected later
 /// still learns it.
 const UI_STATE_RESEND: Duration = Duration::from_secs(2);
+/// Where the settings menu opens until the player moves it.
+const MENU_DEFAULT_POSITION: [f32; 2] = [40.0, 30.0];
+
+/// Keeps the menu's title bar reachable after a resolution change.
+fn menu_on_screen(position: [f32; 2], display: [f32; 2]) -> [f32; 2] {
+    if display[0] <= 0.0 || display[1] <= 0.0 {
+        return position;
+    }
+    [
+        position[0].clamp(0.0, (display[0] - 120.0).max(0.0)),
+        position[1].clamp(0.0, (display[1] - 40.0).max(0.0)),
+    ]
+}
+
+/// How long the config must stay unchanged while the menu is open before it is saved.
+const SAVE_DELAY: Duration = Duration::from_secs(1);
 
 struct OverlayRenderLoop {
     menu_open: bool,
@@ -112,12 +129,17 @@ struct OverlayRenderLoop {
     meter: meter::MeterWindow,
     enemy_hp: enemy_hp::EnemyHpWindow,
     damage_taken: damage_taken::DamageTakenWindow,
+    combat_log: combat_log::CombatLogWindow,
     settings_editor: settings_menu::SettingsEditor,
     /// Latest snapshot from the app; `None` until it connects.
     snapshot: Option<feed::Snapshot>,
     config: config::OverlayConfig,
     /// What is on disk; compared against `config` to save only real changes.
     saved_config: config::OverlayConfig,
+    /// Menu sections whose saved folding has been applied this session.
+    applied_sections: std::collections::HashSet<&'static str>,
+    /// When the config last differed from the previous frame, to save shortly after edits.
+    last_config_change: Option<(config::OverlayConfig, Instant)>,
 }
 
 impl OverlayRenderLoop {
@@ -137,9 +159,12 @@ impl OverlayRenderLoop {
             meter: meter::MeterWindow::new(tx.clone()),
             enemy_hp: enemy_hp::EnemyHpWindow::default(),
             damage_taken: damage_taken::DamageTakenWindow::default(),
+            combat_log: combat_log::CombatLogWindow::default(),
             settings_editor: settings_menu::SettingsEditor::new(tx),
             snapshot: None,
             saved_config: config.clone(),
+            last_config_change: None,
+            applied_sections: Default::default(),
             config,
         }
     }
@@ -157,27 +182,52 @@ impl OverlayRenderLoop {
 
     fn render_menu(&mut self, ui: &imgui::Ui, settings: Option<&OverlaySettings>) {
         let mut open = self.menu_open;
+        let position = menu_on_screen(
+            self.config.menu_position.unwrap_or(MENU_DEFAULT_POSITION),
+            ui.io().display_size,
+        );
         ui.window("GBFR Logs 设置")
-            .position([40.0, 120.0], Condition::FirstUseEver)
+            .position(position, Condition::FirstUseEver)
             .flags(WindowFlags::ALWAYS_AUTO_RESIZE)
             .opened(&mut open)
             .build(|| {
+                // Remembered like the other windows' positions.
+                self.config.menu_position = Some(ui.window_pos());
                 self.render_hotkey_settings(ui);
                 ui.separator();
                 self.render_window_toggles(ui);
+                if ui.button("清空数据") {
+                    self.clear_data();
+                }
+                if ui.is_item_hovered() {
+                    ui.tooltip_text(
+                        "清空各窗口的统计，从下一次命中重新开始。已有数据会先保存为一条日志。",
+                    );
+                }
                 ui.separator();
-                ui.text("伤害统计");
-                self.render_meter_settings(ui);
-                ui.separator();
-                ui.text("敌人血量");
-                self.render_enemy_hp_settings(ui);
-                ui.separator();
-                ui.text("承受伤害");
-                self.render_damage_taken_settings(ui);
-                ui.separator();
-                self.settings_editor.render(ui, settings);
-                ui.separator();
-                self.render_font_settings(ui);
+                // Each part folds on its own; what is folded is remembered in overlay.json.
+                if self.section(ui, "meter", "伤害统计") {
+                    self.render_meter_settings(ui);
+                }
+                if self.section(ui, "enemy_hp", "敌人血量") {
+                    self.render_enemy_hp_settings(ui);
+                }
+                if self.section(ui, "damage_taken", "承受伤害") {
+                    self.render_damage_taken_settings(ui);
+                }
+                if self.section(ui, "combat_log", "战斗日志") {
+                    self.render_combat_log_settings(ui);
+                }
+                let settings_title = settings
+                    .map(|settings| settings.labels.title.clone())
+                    .filter(|title| !title.is_empty())
+                    .unwrap_or_else(|| "统计设置".into());
+                if self.section(ui, "meter_settings", &settings_title) {
+                    self.settings_editor.render(ui, settings);
+                }
+                if self.section(ui, "font", "字体") {
+                    self.render_font_settings(ui);
+                }
                 ui.separator();
                 ui.text_disabled(format!(
                     "按 {} 关闭菜单，也可在托盘菜单中打开/关闭",
@@ -208,6 +258,32 @@ impl OverlayRenderLoop {
         ui.text_disabled("菜单打开时可直接拖动伤害统计窗口");
     }
 
+    /// A collapsible menu section; returns whether it is open. The saved folding is applied the
+    /// first time the section is drawn, after that ImGui keeps it and changes are saved back.
+    fn section(&mut self, ui: &imgui::Ui, id: &'static str, label: &str) -> bool {
+        let collapsed = self.config.collapsed_sections.iter().any(|s| s == id);
+        if self.applied_sections.insert(id) {
+            unsafe {
+                imgui::sys::igSetNextItemOpen(!collapsed, imgui::sys::ImGuiCond_Always as i32)
+            };
+        }
+        let open = ui.collapsing_header(format!("{label}###{id}"), imgui::TreeNodeFlags::empty());
+        if open == collapsed {
+            if open {
+                self.config.collapsed_sections.retain(|s| s != id);
+            } else {
+                self.config.collapsed_sections.push(id.to_string());
+            }
+        }
+        open
+    }
+
+    /// Asks the app to start counting again and forgets the enemies tracked in game.
+    fn clear_data(&mut self) {
+        crate::hooks::enemy_hp::reset();
+        let _ = self.tx.send(Message::OverlayClearRequest);
+    }
+
     /// One checkbox per independent window; the tray mirrors them.
     fn render_window_toggles(&mut self, ui: &imgui::Ui) {
         ui.text("显示的窗口");
@@ -217,6 +293,27 @@ impl OverlayRenderLoop {
             }
             ui.checkbox(window_label(window), self.config.window_shown_mut(window));
         }
+    }
+
+    fn render_combat_log_settings(&mut self, ui: &imgui::Ui) {
+        let log = &mut self.config.combat_log;
+        let (min_width, max_width) = config::ENEMY_HP_WIDTH_RANGE;
+        ui.slider_config("宽度##combat_log", min_width, max_width)
+            .display_format("%.0f px")
+            .build(&mut log.width);
+        let (min_height, max_height) = config::COMBAT_LOG_HEIGHT_RANGE;
+        ui.slider_config("高度##combat_log", min_height, max_height)
+            .display_format("%.0f px")
+            .build(&mut log.height);
+        let (min_scale, max_scale) = config::METER_SCALE_RANGE;
+        ui.slider_config("缩放##combat_log", min_scale, max_scale)
+            .display_format("%.2fx")
+            .build(&mut log.scale);
+        if ui.button("重置位置和大小##combat_log") {
+            *log = config::CombatLogConfig::default();
+            self.combat_log.reset_position();
+        }
+        ui.text_disabled("菜单打开时可上下滚动查看");
     }
 
     fn render_damage_taken_settings(&mut self, ui: &imgui::Ui) {
@@ -273,7 +370,6 @@ impl OverlayRenderLoop {
 
     /// Font picker: system/user font files, a file browser and the glyph size.
     fn render_font_settings(&mut self, ui: &imgui::Ui) {
-        ui.text("字体");
         ui.text_disabled(format!("当前: {}", self.font.description));
 
         let choices = self.font.choices.get_or_insert_with(fonts::discover_fonts);
@@ -414,9 +510,24 @@ impl OverlayRenderLoop {
     /// Settings only change while the menu is open, so saving once it is closed writes each
     /// round of edits a single time.
     fn save_if_changed(&mut self) {
-        if !self.menu_open && self.config != self.saved_config {
+        if self.config == self.saved_config {
+            self.last_config_change = None;
+            return;
+        }
+        // Track when the config last moved, so a drag or slider writes once it settles.
+        let settled = match &self.last_config_change {
+            Some((seen, since)) if *seen == self.config => since.elapsed() >= SAVE_DELAY,
+            _ => {
+                self.last_config_change = Some((self.config.clone(), Instant::now()));
+                false
+            }
+        };
+        // Saved right away once the menu closes, and while it is open once edits settle, so
+        // changes survive the game or the app closing with the menu still open.
+        if !self.menu_open || settled {
             config::save(&self.config);
             self.saved_config = self.config.clone();
+            self.last_config_change = None;
         }
     }
 }
@@ -494,6 +605,20 @@ impl ImguiRenderLoop for OverlayRenderLoop {
             self.meter
                 .render(ui, self.menu_open, &mut self.config.meter, view);
         }
+        if self.config.show_combat_log {
+            let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);
+            let lines = state.map_or(&[][..], |state| state.combat_log.as_slice());
+            let transparency = state.map_or(0.35, |state| {
+                self.settings_editor.effective(&state.settings).transparency
+            });
+            self.combat_log.render(
+                ui,
+                self.menu_open,
+                &mut self.config.combat_log,
+                lines,
+                transparency,
+            );
+        }
         if self.config.show_damage_taken {
             let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);
             let transparency = state.map_or(0.35, |state| {
@@ -548,5 +673,6 @@ fn window_label(window: OverlayWindow) -> &'static str {
         OverlayWindow::Meter => "伤害统计",
         OverlayWindow::EnemyHp => "敌人血量",
         OverlayWindow::DamageTaken => "承受伤害",
+        OverlayWindow::CombatLog => "战斗日志",
     }
 }

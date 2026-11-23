@@ -153,6 +153,19 @@ pub fn snapshot() -> Vec<EnemyHp> {
         .collect()
 }
 
+/// Type hash of a tracked enemy instance.
+pub fn type_of(instance: usize) -> Option<u32> {
+    lock()
+        .iter()
+        .find(|entry| entry.instance == instance)
+        .map(|entry| entry.type_hash)
+}
+
+/// Whether a type hash is a player character.
+pub fn is_player_type(type_hash: u32) -> bool {
+    is_player(type_hash)
+}
+
 /// Forgets every enemy, e.g. at the result screen.
 pub fn reset() {
     lock().clear();

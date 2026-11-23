@@ -35,15 +35,23 @@ pub enum OverlayWindow {
     Meter,
     EnemyHp,
     DamageTaken,
+    CombatLog,
 }
 
 impl OverlayWindow {
     /// Every window, in the order the tray and the menu list them.
-    pub const ALL: [OverlayWindow; 3] = [
+    pub const ALL: [OverlayWindow; 4] = [
         OverlayWindow::Meter,
         OverlayWindow::EnemyHp,
         OverlayWindow::DamageTaken,
+        OverlayWindow::CombatLog,
     ];
+
+    /// Whether the window is shown before the player changes it. The combat log scrolls
+    /// constantly, so it starts hidden.
+    pub fn default_visible(self) -> bool {
+        !matches!(self, OverlayWindow::CombatLog)
+    }
 
     /// Id of the window's check item in the tray menu.
     pub fn tray_id(self) -> &'static str {
@@ -51,6 +59,7 @@ impl OverlayWindow {
             OverlayWindow::Meter => "toggle_overlay_meter",
             OverlayWindow::EnemyHp => "toggle_overlay_enemy_hp",
             OverlayWindow::DamageTaken => "toggle_overlay_damage_taken",
+            OverlayWindow::CombatLog => "toggle_overlay_combat_log",
         }
     }
 
@@ -60,6 +69,7 @@ impl OverlayWindow {
             OverlayWindow::Meter => "Show In-game Meter",
             OverlayWindow::EnemyHp => "Show Enemy HP",
             OverlayWindow::DamageTaken => "Show Damage Taken",
+            OverlayWindow::CombatLog => "Show Combat Log",
         }
     }
 
@@ -172,6 +182,18 @@ pub struct OverlayState {
     /// Damage taken per party member, most first, already filtered by streamer mode.
     pub damage_taken: Vec<OverlayDamageTaken>,
     pub damage_taken_labels: OverlayDamageTakenLabels,
+    /// Latest combat log lines, oldest first.
+    pub combat_log: Vec<OverlayLogLine>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayLogLine {
+    /// `mm:ss.t` since the start of the encounter.
+    pub time: String,
+    pub text: String,
+    /// Colour of the party member the line is about, `0xRRGGBB`.
+    pub color: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -184,6 +206,20 @@ pub struct OverlayDamageTaken {
     pub total_damage: u64,
     pub hits: u32,
     pub max_hit: u64,
+    /// Debuffs and ailments received, longest total first.
+    pub debuffs: Vec<OverlayStatusLine>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayStatusLine {
+    /// Translated status name.
+    pub name: String,
+    pub count: u32,
+    /// Total time active, in milliseconds.
+    pub total_ms: u64,
+    /// Damage taken while it was active.
+    pub damage: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -386,6 +422,11 @@ mod tests {
                 ..Default::default()
             }],
             damage_taken_labels: OverlayDamageTakenLabels::default(),
+            combat_log: vec![OverlayLogLine {
+                time: "00:01.5".into(),
+                text: "Gran › Attack 1 → Enemy  1,234".into(),
+                color: 0xFF5630,
+            }],
             attack_types: vec![OverlayAttackType {
                 label: "Skills".into(),
                 color: 0x4C9AFF,
@@ -408,5 +449,6 @@ mod tests {
         assert_eq!(decoded.players[0].skills[0].children.len(), 1);
         assert_eq!(decoded.enemies, state.enemies);
         assert_eq!(decoded.damage_taken, state.damage_taken);
+        assert_eq!(decoded.combat_log, state.combat_log);
     }
 }

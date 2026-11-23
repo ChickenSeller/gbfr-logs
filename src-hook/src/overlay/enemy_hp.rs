@@ -8,7 +8,8 @@ use protocol::OverlayEnemy;
 use super::config::EnemyHpConfig;
 use crate::hooks::enemy_hp::{self, EnemyHp};
 
-const DEFAULT_POSITION: [f32; 2] = [40.0, 40.0];
+/// Default layout: a row along the top edge, right of the settings menu.
+const DEFAULT_POSITION: [f32; 2] = [470.0, 25.0];
 const MIN_VISIBLE: [f32; 2] = [80.0, 30.0];
 const MIN_INTERACTIVE_ALPHA: f32 = 0.6;
 const PADDING: f32 = 6.0;
@@ -40,10 +41,8 @@ impl EnemyHpWindow {
         names: &[OverlayEnemy],
         transparency: f32,
     ) {
+        // Shown whenever it is enabled, even without data, so it matches its checkbox.
         let enemies = enemy_hp::snapshot();
-        if enemies.is_empty() && !interactive {
-            return;
-        }
         let names: HashMap<u32, &str> = names
             .iter()
             .map(|enemy| (enemy.type_hash, enemy.name.as_str()))
@@ -81,7 +80,11 @@ impl EnemyHpWindow {
             .build(|| {
                 ui.set_window_font_scale(config.scale);
                 if enemies.is_empty() {
-                    ui.text_disabled("敌人血量：攻击敌人后显示  菜单打开时可拖动此窗口");
+                    ui.text_disabled(if interactive {
+                        "敌人血量：攻击敌人后显示  菜单打开时可拖动此窗口"
+                    } else {
+                        "敌人血量：暂无数据"
+                    });
                     // Keep the placeholder as wide as a bar so the window can be placed.
                     ui.dummy([config.width * config.scale, 0.0]);
                 }

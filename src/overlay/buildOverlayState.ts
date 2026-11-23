@@ -1,7 +1,10 @@
 import { ATTACK_CATEGORIES, ATTACK_CATEGORY_COLORS, attackComposition } from "@/attackCategories";
+import { formatCombatLogEntry, partyCharacters } from "@/combatLog";
 import { computeSkillBreakdown } from "@/components/useSkillBreakdown";
+import { isDebuff, sortStatuses, statusName } from "@/statuses";
 import {
   CharacterType,
+  CombatLogEntry,
   ComputedPlayerState,
   ComputedSkillGroup,
   ComputedSkillState,
@@ -9,6 +12,7 @@ import {
   MeterColumns,
   OverlayDamageTaken,
   OverlayEnemy,
+  OverlayLogLine,
   OverlayPlayer,
   OverlaySettings,
   OverlaySettingsValues,
@@ -29,6 +33,9 @@ import { t } from "i18next";
 const FALLBACK_COLOR = 0xffffff;
 
 /** Converts `#RRGGBB` to `0xRRGGBB`. */
+/** How many combat log lines the in-game window gets. */
+export const OVERLAY_COMBAT_LOG_LINES = 60;
+
 export const hexToRgb = (hex: string): number => {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   return match ? parseInt(match[1], 16) : FALLBACK_COLOR;
@@ -150,7 +157,8 @@ const toOverlaySkill = (characterType: CharacterType, skill: ComputedSkillState 
 export const buildOverlayState = (
   encounterState: EncounterState,
   partyData: Array<PlayerData | null>,
-  settings: OverlaySettings
+  settings: OverlaySettings,
+  combatLog: CombatLogEntry[] = []
 ): OverlayState => {
   const { values } = settings;
   const partyColors = values.partyColors.map(rgbToHex);
@@ -197,6 +205,7 @@ export const buildOverlayState = (
     players: rows,
     enemies: overlayEnemies(encounterState),
     damageTaken: overlayDamageTaken(encounterState, partyData, players, partyColors, values),
+    combatLog: overlayCombatLog(combatLog, encounterState, partyData, partyColors, values),
     damageTakenLabels: {
       title: t("ui.logs.damage-taken"),
       hits: t("ui.damage-taken.hits"),
@@ -209,6 +218,28 @@ export const buildOverlayState = (
   };
 };
 
+/** The latest combat log lines; streamer mode keeps only the player's own. */
+const overlayCombatLog = (
+  entries: CombatLogEntry[],
+  encounterState: EncounterState,
+  partyData: Array<PlayerData | null>,
+  partyColors: string[],
+  values: OverlaySettingsValues
+): OverlayLogLine[] => {
+  const context = {
+    partyData,
+    characters: partyCharacters(encounterState),
+    partyColors,
+    showDisplayNames: values.showDisplayNames,
+  };
+  const ownIndex = partyData[0]?.actorIndex;
+  return entries
+    .map((entry) => formatCombatLogEntry(entry, context))
+    .filter((line) => !values.streamerMode || line.actorIndex === ownIndex)
+    .slice(-OVERLAY_COMBAT_LOG_LINES)
+    .map((line) => ({ time: line.time, text: line.text, color: hexToRgb(line.color) }));
+};
+
 /** Party members' damage taken with the meter's names and colours, most first. */
 const overlayDamageTaken = (
   encounterState: EncounterState,
@@ -216,40 +247,54 @@ const overlayDamageTaken = (
   players: ComputedPlayerState[],
   partyColors: string[],
   values: OverlaySettingsValues
-): OverlayDamageTaken[] =>
-  Object.values(encounterState.damageTaken ?? {})
-    .sort((a, b) => b.totalDamage - a.totalDamage)
-    .flatMap((taken, i): OverlayDamageTaken[] => {
-      const partySlotIndex = partyData.findIndex((member) => member?.actorIndex === taken.index);
-      if (values.streamerMode && partySlotIndex !== 0) return [];
-      const player = players.find((p) => p.index === taken.index) ?? {
-        index: taken.index,
-        characterType: taken.characterType,
-        totalDamage: 0,
-        dps: 0,
-        sba: 0,
-        totalStunValue: 0,
-        stunPerSecond: 0,
-        lastDamageTime: 0,
-        skillBreakdown: [],
-        partyIndex: i,
-        percentage: 0,
-      };
-      return [
-        {
-          name: translatedPlayerName(
-            partySlotIndex,
-            partyData[partySlotIndex] ?? null,
-            player,
-            values.showDisplayNames
-          ),
-          color: hexToRgb(resolvePlayerColor(partyColors, partySlotIndex, player.partyIndex) ?? ""),
-          totalDamage: toCount(taken.totalDamage),
-          hits: toCount(taken.hits),
-          maxHit: toCount(taken.maxHit),
-        },
-      ];
-    });
+): OverlayDamageTaken[] => {
+  const taken = encounterState.damageTaken ?? {};
+  const statuses = encounterState.statuses ?? {};
+  const characters = partyCharacters(encounterState);
+  // Members who took damage or got a debuff, most damage first.
+  const indices = [...new Set([...Object.keys(taken), ...Object.keys(statuses)].map(Number))].sort(
+    (a, b) => (taken[b]?.totalDamage ?? 0) - (taken[a]?.totalDamage ?? 0)
+  );
+
+  return indices.flatMap((index, i): OverlayDamageTaken[] => {
+    const debuffs = sortStatuses(Object.values(statuses[index] ?? {}))
+      .filter((stats) => isDebuff(stats.className))
+      .map((stats) => ({
+        name: statusName(stats.className),
+        count: stats.count,
+        totalMs: toCount(stats.totalMs),
+        damage: toCount(stats.damageWhileActive ?? 0),
+      }));
+    const memberTaken = taken[index];
+    if (!memberTaken && debuffs.length === 0) return [];
+
+    const partySlotIndex = partyData.findIndex((member) => member?.actorIndex === index);
+    if (values.streamerMode && partySlotIndex !== 0) return [];
+    const player = players.find((p) => p.index === index) ?? {
+      index,
+      characterType: memberTaken?.characterType ?? characters.get(index) ?? { Unknown: 0 },
+      totalDamage: 0,
+      dps: 0,
+      sba: 0,
+      totalStunValue: 0,
+      stunPerSecond: 0,
+      lastDamageTime: 0,
+      skillBreakdown: [],
+      partyIndex: i,
+      percentage: 0,
+    };
+    return [
+      {
+        name: translatedPlayerName(partySlotIndex, partyData[partySlotIndex] ?? null, player, values.showDisplayNames),
+        color: hexToRgb(resolvePlayerColor(partyColors, partySlotIndex, player.partyIndex) ?? ""),
+        totalDamage: toCount(memberTaken?.totalDamage ?? 0),
+        hits: toCount(memberTaken?.hits ?? 0),
+        maxHit: toCount(memberTaken?.maxHit ?? 0),
+        debuffs,
+      },
+    ];
+  });
+};
 
 /** One name per enemy type hit in the encounter. */
 const overlayEnemies = (encounterState: EncounterState): OverlayEnemy[] => {

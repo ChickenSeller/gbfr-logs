@@ -18,8 +18,10 @@ use super::{
     v0,
 };
 
+pub mod combat_log;
 mod player_state;
 mod skill_state;
+mod statuses;
 
 use player_state::PlayerState;
 use skill_state::SkillState;
@@ -355,6 +357,9 @@ pub struct DerivedEncounterState {
     /// Damage taken by each party member, keyed by actor index.
     #[serde(default)]
     damage_taken: HashMap<u32, DamageTakenState>,
+    /// Status effects on each party member: counts and durations per class.
+    #[serde(default, skip_deserializing)]
+    statuses: statuses::StatusTracker,
 }
 
 impl Default for DerivedEncounterState {
@@ -370,6 +375,7 @@ impl Default for DerivedEncounterState {
             party: HashMap::new(),
             targets: HashMap::new(),
             damage_taken: HashMap::new(),
+            statuses: Default::default(),
         }
     }
 }
@@ -494,7 +500,7 @@ impl Serialize for MeterEncounterState<'_> {
         S: Serializer,
     {
         let encounter = self.0;
-        let mut state = serializer.serialize_struct("DerivedEncounterState", 10)?;
+        let mut state = serializer.serialize_struct("DerivedEncounterState", 11)?;
         state.serialize_field("startTime", &encounter.start_time)?;
         state.serialize_field("endTime", &encounter.end_time)?;
         state.serialize_field("totalDamage", &encounter.total_damage)?;
@@ -505,6 +511,7 @@ impl Serialize for MeterEncounterState<'_> {
         state.serialize_field("party", &MeterParty(&encounter.party))?;
         state.serialize_field("targets", &encounter.targets)?;
         state.serialize_field("damageTaken", &encounter.damage_taken)?;
+        state.serialize_field("statuses", &encounter.statuses)?;
         state.end()
     }
 }
@@ -599,6 +606,11 @@ pub struct Parser {
     /// The database connection for the parser, used to save the encounter
     #[serde(skip)]
     db: Option<Connection>,
+
+    /// Statuses active in game right now, also outside encounters, so an encounter starts with
+    /// the ones applied before its first hit.
+    #[serde(skip)]
+    live_statuses: HashMap<(u32, u64), protocol::StatusEvent>,
 }
 
 impl Parser {
@@ -608,6 +620,28 @@ impl Parser {
             db: Some(db),
             window_handle: Some(window),
             ..Default::default()
+        }
+    }
+
+    /// Every combat log entry of the encounter, oldest first.
+    pub fn combat_log(&self) -> Vec<combat_log::CombatLogEntry> {
+        let start = self.start_time();
+        self.encounter
+            .event_log()
+            .filter_map(|(timestamp, message)| combat_log::entry(timestamp - start, message))
+            .collect()
+    }
+
+    /// Logs `message` and sends its combat log entry to the logs window.
+    fn push_logged_event(&mut self, timestamp: i64, message: Message) {
+        self.encounter.push_event(timestamp, message);
+        // After pushing: the first event of an encounter is its start time.
+        let Some((_, message)) = self.encounter.raw_event_log.last() else {
+            return;
+        };
+        let entry = combat_log::entry(timestamp - self.start_time(), message);
+        if let (Some(window), Some(entry)) = (&self.window_handle, entry) {
+            let _ = window.emit(combat_log::LIVE_EVENT, entry);
         }
     }
 
@@ -653,6 +687,7 @@ impl Parser {
 
         for (timestamp, event) in self.encounter.event_log() {
             self.derived_state.end_time = *timestamp;
+            self.derived_state.statuses.touch(*timestamp);
 
             match event {
                 Message::DamageEvent(event) => {
@@ -669,7 +704,18 @@ impl Parser {
                     self.derived_state
                         .process_damage_event(*timestamp, &damage_instance);
                 }
-                Message::DamageTaken(event) => self.derived_state.process_damage_taken(event),
+                Message::DamageTaken(event) => {
+                    self.derived_state.process_damage_taken(event);
+                    self.derived_state
+                        .statuses
+                        .damage_taken(event.target.parent_index, event.damage as u64);
+                }
+                Message::StatusApplied(event) => {
+                    self.derived_state.statuses.applied(*timestamp, event)
+                }
+                Message::StatusRemoved(event) => {
+                    self.derived_state.statuses.removed(*timestamp, event)
+                }
                 _ => {}
             }
         }
@@ -682,6 +728,7 @@ impl Parser {
 
         for (timestamp, event) in self.encounter.event_log() {
             self.derived_state.end_time = *timestamp;
+            self.derived_state.statuses.touch(*timestamp);
 
             match event {
                 Message::DamageEvent(event) => {
@@ -709,7 +756,16 @@ impl Parser {
                     let source_type = EnemyType::from_hash(event.source.parent_actor_type);
                     if targets.is_empty() || targets.contains(&source_type) {
                         self.derived_state.process_damage_taken(event);
+                        self.derived_state
+                            .statuses
+                            .damage_taken(event.target.parent_index, event.damage as u64);
                     }
+                }
+                Message::StatusApplied(event) => {
+                    self.derived_state.statuses.applied(*timestamp, event)
+                }
+                Message::StatusRemoved(event) => {
+                    self.derived_state.statuses.removed(*timestamp, event)
                 }
                 _ => {}
             }
@@ -841,9 +897,11 @@ impl Parser {
         if Self::should_ignore_damage_event(&event) {
             // Only while a fight is running: the first damage dealt resets the encounter.
             if Self::is_damage_taken(&event) && self.status == ParserStatus::InProgress {
-                self.encounter
-                    .push_event(now, Message::DamageTaken(event.clone()));
+                self.push_logged_event(now, Message::DamageTaken(event.clone()));
                 self.derived_state.process_damage_taken(&event);
+                self.derived_state
+                    .statuses
+                    .damage_taken(event.target.parent_index, event.damage as u64);
                 self.emit_meter_event("encounter-update");
             }
             return;
@@ -854,10 +912,18 @@ impl Parser {
             self.reset();
             self.derived_state.start(now);
             self.update_status(ParserStatus::InProgress);
+            // Statuses applied before the first hit start with the encounter.
+            let mut live: Vec<protocol::StatusEvent> =
+                self.live_statuses.values().cloned().collect();
+            live.sort_by_key(|event| (event.actor_index, event.status_id));
+            for event in live {
+                self.derived_state.statuses.applied(now, &event);
+                self.push_logged_event(now, Message::StatusApplied(event));
+            }
         }
+        self.derived_state.statuses.touch(now);
 
-        self.encounter
-            .push_event(now, Message::DamageEvent(event.clone()));
+        self.push_logged_event(now, Message::DamageEvent(event.clone()));
 
         let player_data = self
             .encounter
@@ -1144,7 +1210,7 @@ impl Parser {
     }
 
     pub fn on_sba_attempt(&mut self, event: OnAttemptSBAEvent) {
-        self.encounter.push_event(
+        self.push_logged_event(
             Utc::now().timestamp_millis(),
             Message::OnAttemptSBA(event.clone()),
         );
@@ -1158,7 +1224,7 @@ impl Parser {
     }
 
     pub fn on_sba_perform(&mut self, event: OnPerformSBAEvent) {
-        self.encounter.push_event(
+        self.push_logged_event(
             Utc::now().timestamp_millis(),
             Message::OnPerformSBA(event.clone()),
         );
@@ -1173,7 +1239,7 @@ impl Parser {
 
     /// @TODO(false): Note that this event only fires for the local player.
     pub fn on_continue_sba_chain(&mut self, event: OnContinueSBAChainEvent) {
-        self.encounter.push_event(
+        self.push_logged_event(
             Utc::now().timestamp_millis(),
             Message::OnContinueSBAChain(event.clone()),
         );
@@ -1187,7 +1253,7 @@ impl Parser {
     }
 
     pub fn on_death_event(&mut self, event: OnDeathEvent) {
-        self.encounter.push_event(
+        self.push_logged_event(
             Utc::now().timestamp_millis(),
             Message::OnDeathEvent(event.clone()),
         );
@@ -1196,6 +1262,21 @@ impl Parser {
     fn reset(&mut self) {
         self.encounter.clear_event_log();
         self.derived_state = Default::default();
+    }
+
+    /// Clears the live encounter so counting starts again from the next hit, as asked from the
+    /// in-game menu. What was recorded so far is saved as its own log first, so nothing is lost.
+    /// Statuses still active carry over into the next encounter.
+    pub fn clear_live_encounter(&mut self) {
+        if self.status == ParserStatus::InProgress && self.has_damage() {
+            self.finish_and_save_encounter();
+        }
+        self.reset();
+        self.update_status(ParserStatus::Waiting);
+        if let Some(window) = &self.window_handle {
+            let _ = window.emit("encounter-cleared", ());
+        }
+        self.emit_meter_event("encounter-update");
     }
 
     fn update_status(&mut self, new_status: ParserStatus) {
@@ -1208,6 +1289,30 @@ impl Parser {
     }
 
     // Checks if the damage event should be ignored for the purposes of parsing.
+    pub fn on_status_applied(&mut self, event: protocol::StatusEvent) {
+        self.live_statuses
+            .insert((event.actor_index, event.status_id), event.clone());
+        if self.status != ParserStatus::InProgress {
+            return;
+        }
+        let now = Utc::now().timestamp_millis();
+        self.derived_state.statuses.applied(now, &event);
+        self.push_logged_event(now, Message::StatusApplied(event));
+        self.emit_meter_event("encounter-update");
+    }
+
+    pub fn on_status_removed(&mut self, event: protocol::StatusEvent) {
+        self.live_statuses
+            .remove(&(event.actor_index, event.status_id));
+        if self.status != ParserStatus::InProgress {
+            return;
+        }
+        let now = Utc::now().timestamp_millis();
+        self.derived_state.statuses.removed(now, &event);
+        self.push_logged_event(now, Message::StatusRemoved(event));
+        self.emit_meter_event("encounter-update");
+    }
+
     /// An enemy (no player character behind the source) hitting a party member.
     fn is_damage_taken(event: &DamageEvent) -> bool {
         event.damage > 0

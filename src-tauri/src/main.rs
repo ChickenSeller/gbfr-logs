@@ -284,6 +284,19 @@ struct ParseOptions {
     targets: Vec<EnemyType>,
 }
 
+/// The full combat log of a saved encounter, for the log page's "Combat Log" tab.
+#[tauri::command]
+fn fetch_combat_log(id: u64) -> Result<Vec<parser::v1::combat_log::CombatLogEntry>, String> {
+    let conn = db::connect_to_db().map_err(|e| e.to_string())?;
+    let (blob, version): (Vec<u8>, u8) = conn
+        .query_row("SELECT data, version FROM logs WHERE id = ?", [id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let parser = parser::deserialize_version(&blob, version).map_err(|e| e.to_string())?;
+    Ok(parser.combat_log())
+}
+
 #[tauri::command]
 fn fetch_encounter_state(id: u64, options: ParseOptions) -> Result<EncounterStateResponse, String> {
     let conn = db::connect_to_db().map_err(|e| e.to_string())?;
@@ -481,6 +494,15 @@ fn connect_and_run_parser(app: AppHandle) {
                                         | protocol::Message::DamageTaken(event) => {
                                             state.on_damage_event(event);
                                         }
+                                        protocol::Message::OverlayClearRequest => {
+                                            state.clear_live_encounter();
+                                        }
+                                        protocol::Message::StatusApplied(event) => {
+                                            state.on_status_applied(event);
+                                        }
+                                        protocol::Message::StatusRemoved(event) => {
+                                            state.on_status_removed(event);
+                                        }
                                         protocol::Message::OnAreaEnter(event) => {
                                             state.on_area_enter_event(event);
                                         }
@@ -567,11 +589,13 @@ fn system_tray_with_menu() -> SystemTray {
     let quit = CustomMenuItem::new("quit", "Quit");
 
     let mut menu = SystemTrayMenu::new().add_item(logs);
-    // One check item per in-game window, all shown by default.
+    // One check item per in-game window, checked if it is shown by default.
     for window in protocol::OverlayWindow::ALL {
-        menu = menu.add_item(
-            CustomMenuItem::new(window.tray_id(), window.default_label()).selected(),
-        );
+        let mut item = CustomMenuItem::new(window.tray_id(), window.default_label());
+        if window.default_visible() {
+            item = item.selected();
+        }
+        menu = menu.add_item(item);
     }
     let menu = menu
         .add_item(overlay_menu)
@@ -835,6 +859,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             fetch_encounter_state,
+            fetch_combat_log,
             fetch_logs,
             delete_logs,
             delete_all_logs,

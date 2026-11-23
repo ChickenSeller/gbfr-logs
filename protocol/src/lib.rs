@@ -272,6 +272,22 @@ pub struct OnDeathEvent {
     pub death_counter: u32,
 }
 
+/// A status effect on a party member, read from the actor's `ExStatus` list.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct StatusEvent {
+    /// The party member, as `Actor::parent_index` of their damage.
+    pub actor_index: u32,
+    pub actor_type: u32,
+    /// Identifies this status while it is active (the status object's address).
+    pub status_id: u64,
+    /// RTTI class name without decoration, e.g. `StatusAilmentPoison`.
+    pub class_name: String,
+    /// `StatusDef::Types` value of the status.
+    pub type_id: u32,
+    /// Who applied it, if the source is still known. Enemy hash or character hash.
+    pub source_type: Option<u32>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
     OnAreaEnter(AreaEnterEvent),
@@ -291,6 +307,10 @@ pub enum Message {
     /// Damage an enemy dealt to a party member. The hook sends it as a plain `DamageEvent`;
     /// the parser stores it under this variant so the damage-dealt paths never count it.
     DamageTaken(DamageEvent),
+    /// A status effect (buff, debuff or ailment) appeared on a party member.
+    StatusApplied(StatusEvent),
+    /// A status effect left a party member: it expired, was cleared or was refreshed.
+    StatusRemoved(StatusEvent),
     /// The player pressed a copy button in the in-game overlay. Handled by the app's UI and
     /// never stored in encounter logs. Must stay after every logged variant: bincode encodes
     /// the variant index.
@@ -300,6 +320,8 @@ pub enum Message {
     OverlaySettingsChange(OverlaySettingsValues),
     /// The overlay's visible state, for the app's tray menu. Never logged.
     OverlayUiState(OverlayUiState),
+    /// The player asked to clear the in-game windows and count from now on. Never logged.
+    OverlayClearRequest,
 }
 
 /// Damage event layout used through Awa Edition 1.8.4.

@@ -24,7 +24,9 @@ import toast from "react-hot-toast";
 import { Link, useParams } from "react-router-dom";
 
 import { AttackCompositionTable } from "@/components/AttackCompositionTable";
+import { CombatLogTab } from "@/components/CombatLogTab";
 import { DamageTakenTable } from "@/components/DamageTakenTable";
+import { StatusEffectsTable } from "@/components/StatusEffectsTable";
 import { Table as MeterTable } from "@/components/Table";
 import { EncounterStateResponse, useEncounterStore } from "@/stores/useEncounterStore";
 import { useMeterSettingsStore } from "@/stores/useMeterSettingsStore";
@@ -452,11 +454,14 @@ export const ViewPage = () => {
 
         <Divider my="sm" />
 
-        <Tabs defaultValue="overview" variant="outline">
+        {/* Inactive panels unmount, so the combat log is only fetched when its tab is open. */}
+        <Tabs defaultValue="overview" variant="outline" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="overview">{t("ui.logs.overview")}</Tabs.Tab>
             <Tabs.Tab value="attack-types">{t("ui.logs.attack-types")}</Tabs.Tab>
             <Tabs.Tab value="damage-taken">{t("ui.logs.damage-taken")}</Tabs.Tab>
+            <Tabs.Tab value="statuses">{t("ui.logs.statuses")}</Tabs.Tab>
+            <Tabs.Tab value="combat-log">{t("ui.logs.combat-log")}</Tabs.Tab>
             <Tabs.Tab value="sba">{t("ui.logs.sba-chart")}</Tabs.Tab>
             <Tabs.Tab value="equipment" disabled={playerData.length === 0}>
               {t("ui.logs.equipment")}
@@ -523,6 +528,27 @@ export const ViewPage = () => {
                 showDisplayNames={show_display_names}
               />
             </Box>
+          </Tabs.Panel>
+          <Tabs.Panel value="statuses">
+            <Box mt="md">
+              <StatusEffectsTable
+                encounter={encounter}
+                partyData={playerData}
+                playerColors={playerColors}
+                showDisplayNames={show_display_names}
+              />
+            </Box>
+          </Tabs.Panel>
+          <Tabs.Panel value="combat-log">
+            {id && (
+              <CombatLogTab
+                id={id}
+                encounter={encounter}
+                partyData={playerData}
+                playerColors={playerColors}
+                showDisplayNames={show_display_names}
+              />
+            )}
           </Tabs.Panel>
           <Tabs.Panel value="sba">
             <Group mt="20" gap="xs">

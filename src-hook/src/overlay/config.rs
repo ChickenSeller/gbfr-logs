@@ -15,6 +15,7 @@ pub const METER_WIDTH_RANGE: (f32, f32) = (240.0, 900.0);
 pub const METER_SCALE_RANGE: (f32, f32) = (0.6, 2.0);
 pub const ENEMY_HP_WIDTH_RANGE: (f32, f32) = (160.0, 900.0);
 pub const ENEMY_HP_COUNT_RANGE: (u32, u32) = (1, 10);
+pub const COMBAT_LOG_HEIGHT_RANGE: (f32, f32) = (60.0, 900.0);
 
 pub fn data_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|dir| dir.join("gbfr-logs-awa"))
@@ -29,9 +30,15 @@ pub struct OverlayConfig {
     pub enemy_hp: EnemyHpConfig,
     pub show_damage_taken: bool,
     pub damage_taken: DamageTakenConfig,
+    pub show_combat_log: bool,
+    pub combat_log: CombatLogConfig,
     pub font: FontSettings,
     /// Opens and closes the in-game menu.
     pub menu_hotkey: super::hotkey::KeyCombo,
+    /// Menu sections the player folded.
+    pub collapsed_sections: Vec<String>,
+    /// Top-left corner of the settings menu; `None` until it has been moved.
+    pub menu_position: Option<[f32; 2]>,
 }
 
 impl Default for OverlayConfig {
@@ -43,8 +50,12 @@ impl Default for OverlayConfig {
             enemy_hp: EnemyHpConfig::default(),
             show_damage_taken: true,
             damage_taken: DamageTakenConfig::default(),
+            show_combat_log: protocol::OverlayWindow::CombatLog.default_visible(),
+            combat_log: CombatLogConfig::default(),
             font: FontSettings::default(),
             menu_hotkey: super::hotkey::KeyCombo::default(),
+            collapsed_sections: Vec::new(),
+            menu_position: None,
         }
     }
 }
@@ -134,6 +145,28 @@ impl Default for DamageTakenConfig {
     }
 }
 
+/// The combat log window.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct CombatLogConfig {
+    pub position: Option<[f32; 2]>,
+    pub width: f32,
+    /// Height of the scrolling area in unscaled pixels.
+    pub height: f32,
+    pub scale: f32,
+}
+
+impl Default for CombatLogConfig {
+    fn default() -> Self {
+        Self {
+            position: None,
+            width: 460.0,
+            height: 180.0,
+            scale: 1.0,
+        }
+    }
+}
+
 impl OverlayConfig {
     /// Whether an independent window is shown.
     pub fn window_shown(&self, window: protocol::OverlayWindow) -> &bool {
@@ -141,6 +174,7 @@ impl OverlayConfig {
             protocol::OverlayWindow::Meter => &self.show_meter,
             protocol::OverlayWindow::EnemyHp => &self.show_enemy_hp,
             protocol::OverlayWindow::DamageTaken => &self.show_damage_taken,
+            protocol::OverlayWindow::CombatLog => &self.show_combat_log,
         }
     }
 
@@ -149,6 +183,7 @@ impl OverlayConfig {
             protocol::OverlayWindow::Meter => &mut self.show_meter,
             protocol::OverlayWindow::EnemyHp => &mut self.show_enemy_hp,
             protocol::OverlayWindow::DamageTaken => &mut self.show_damage_taken,
+            protocol::OverlayWindow::CombatLog => &mut self.show_combat_log,
         }
     }
 
@@ -165,6 +200,23 @@ impl OverlayConfig {
             .is_some_and(|[x, y]| !x.is_finite() || !y.is_finite())
         {
             enemy.position = None;
+        }
+        let log_defaults = CombatLogConfig::default();
+        let log = &mut self.combat_log;
+        log.width = clamp_or(log.width, ENEMY_HP_WIDTH_RANGE, log_defaults.width);
+        log.height = clamp_or(log.height, COMBAT_LOG_HEIGHT_RANGE, log_defaults.height);
+        log.scale = clamp_or(log.scale, METER_SCALE_RANGE, log_defaults.scale);
+        if log
+            .position
+            .is_some_and(|[x, y]| !x.is_finite() || !y.is_finite())
+        {
+            log.position = None;
+        }
+        if self
+            .menu_position
+            .is_some_and(|[x, y]| !x.is_finite() || !y.is_finite())
+        {
+            self.menu_position = None;
         }
         let taken_defaults = DamageTakenConfig::default();
         let taken = &mut self.damage_taken;

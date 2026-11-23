@@ -177,8 +177,19 @@ impl OnProcessDamageHook {
         }
 
         let target_type_id: u32 = actor_type_id(target_specified_instance_ptr as *const usize);
-        super::enemy_hp::observe(target_specified_instance_ptr, target_type_id);
         let target_idx = actor_idx(target_specified_instance_ptr as *const usize);
+        super::enemy_hp::observe(target_specified_instance_ptr, target_type_id);
+        // Party members, as attacker or as target, get their statuses watched.
+        if super::enemy_hp::is_player_type(source_parent_type_id) {
+            super::statuses::track(
+                identity_actor as usize,
+                source_parent_idx,
+                source_parent_type_id,
+            );
+        }
+        if super::enemy_hp::is_player_type(target_type_id) {
+            super::statuses::track(target_specified_instance_ptr, target_idx, target_type_id);
+        }
         let stun_value =
             stun_value_for_event(&action_type, previous_stun_value, current_stun_value);
 

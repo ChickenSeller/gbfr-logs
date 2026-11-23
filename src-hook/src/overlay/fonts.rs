@@ -142,6 +142,9 @@ pub struct FontSet {
     pub description: String,
 }
 
+/// Arrows (U+2190-21FF) and geometric shapes (U+25A0-25FF), zero-terminated pairs.
+static SYMBOL_RANGES: &[u32] = &[0x2190, 0x21FF, 0x25A0, 0x25FF, 0];
+
 impl FontSet {
     /// Loads `custom` (if any and valid) plus the system fallbacks. An unusable custom font
     /// is reported in `error` and the system default is used instead.
@@ -213,6 +216,14 @@ impl FontSet {
                 data: cjk,
                 size_pixels: self.size,
                 config: config(FontGlyphRanges::chinese_full()),
+            });
+        }
+        // Arrows and shapes used by the combat log (→, ▲, ◆), outside the CJK ranges.
+        if let Some(symbols) = self.cjk.as_ref().or(self.base.as_ref()) {
+            sources.push(FontSource::TtfData {
+                data: symbols,
+                size_pixels: self.size,
+                config: config(FontGlyphRanges::from_slice(SYMBOL_RANGES)),
             });
         }
         if let Some(korean) = &self.korean {

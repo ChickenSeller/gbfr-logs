@@ -48,8 +48,6 @@ impl SettingsEditor {
         let mut values = current.clone();
         let labels = &settings.labels;
 
-        ui.text(&labels.title);
-
         let mut language = settings
             .languages
             .iter()

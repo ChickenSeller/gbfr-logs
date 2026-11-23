@@ -10,6 +10,7 @@ import { changeLanguagePreference } from "@/i18n";
 import { SUPPORTED_LANGUAGES, SYSTEM_LANGUAGE, getLanguagePreference } from "@/language";
 import { useMeterSettingsStore } from "@/stores/useMeterSettingsStore";
 import {
+  CombatLogEntry,
   EncounterState,
   EncounterUpdateEvent,
   OverlayCopyRequest,
@@ -19,7 +20,12 @@ import {
   PlayerData,
 } from "@/types";
 import { buildFullEncounterText, buildSimpleEncounterText } from "@/utils";
-import { buildOverlaySettings, buildOverlayState, meterSettingsFromOverlay } from "./buildOverlayState";
+import {
+  OVERLAY_COMBAT_LOG_LINES,
+  buildOverlaySettings,
+  buildOverlayState,
+  meterSettingsFromOverlay,
+} from "./buildOverlayState";
 
 const DEFAULT_ENCOUNTER_STATE: EncounterState = {
   totalDamage: 0,
@@ -34,6 +40,16 @@ const DEFAULT_ENCOUNTER_STATE: EncounterState = {
 const EMPTY_PARTY: Array<PlayerData | null> = [null, null, null, null];
 
 const LANGUAGES = Object.entries(SUPPORTED_LANGUAGES).map(([value, label]) => ({ value, label }));
+
+/**
+ * Adds a live entry, keeping the last `OVERLAY_COMBAT_LOG_LINES * 2`. Times restart with each
+ * encounter, so an entry from well before the last one starts a new log.
+ */
+export const appendCombatLogEntry = (log: CombatLogEntry[], entry: CombatLogEntry): CombatLogEntry[] => {
+  const last = log[log.length - 1];
+  if (last && entry.time + 1000 < last.time) return [entry];
+  return [...log.slice(-(OVERLAY_COMBAT_LOG_LINES * 2 - 1)), entry];
+};
 
 const notifyOverlay = (text: string, level: OverlayNotice["level"]) => {
   const notice: OverlayNotice = { text, level };
@@ -60,6 +76,8 @@ export const OverlayBridge = () => {
   const [partyData, setPartyData] = useState<Array<PlayerData | null>>(EMPTY_PARTY);
   const [lastPartyData, setLastPartyData] = useState<Array<PlayerData | null>>(EMPTY_PARTY);
   const previousStatus = usePrevious(encounterState.status);
+  // Recent combat log entries; the overlay only shows the last lines.
+  const [combatLog, setCombatLog] = useState<CombatLogEntry[]>([]);
 
   const settings = useMeterSettingsStore(
     useShallow((state) => ({
@@ -92,17 +110,27 @@ export const OverlayBridge = () => {
   useEffect(() => {
     const languages = [{ value: SYSTEM_LANGUAGE, label: t("ui.language-system") }, ...LANGUAGES];
     const overlaySettings = buildOverlaySettings(settings, languagePreference, languages, (key) => t(key));
-    const state = buildOverlayState(encounterState, visiblePartyData, overlaySettings);
+    const state = buildOverlayState(encounterState, visiblePartyData, overlaySettings, combatLog);
     // Without an injected hook the app keeps the latest snapshot for later.
     invoke("push_overlay_state", { state }).catch(() => {});
-  }, [encounterState, visiblePartyData, settings, t, i18n.language, languagePreference]);
+  }, [encounterState, visiblePartyData, settings, t, i18n.language, languagePreference, combatLog]);
 
   useEffect(() => {
     const listeners = [
       listen("encounter-update", (event: EncounterUpdateEvent) => setEncounterState(event.payload)),
       listen("encounter-party-update", (event: PartyUpdateEvent) => setPartyData(event.payload)),
+      // Cleared from the in-game menu: the next hit starts a new encounter.
+      listen("encounter-cleared", () => {
+        setEncounterState(DEFAULT_ENCOUNTER_STATE);
+        setCombatLog([]);
+        notifyOverlay(t("ui.overlay-cleared"), "Success");
+      }),
+      listen("combat-log-entry", (event: { payload: CombatLogEntry }) =>
+        setCombatLog((log) => appendCombatLogEntry(log, event.payload))
+      ),
       listen("on-area-enter", (event: EncounterUpdateEvent) => {
         setEncounterState(event.payload.status === "Waiting" ? DEFAULT_ENCOUNTER_STATE : event.payload);
+        setCombatLog([]);
         notifyOverlay(t("ui.on-area-enter"), "Success");
       }),
       // Same effect as editing the settings page; the next snapshot echoes the new values.

@@ -21,6 +21,7 @@ mod damage;
 mod damage_details;
 mod death;
 pub mod enemy_hp;
+mod statuses;
 mod ffi;
 mod globals;
 mod player;
@@ -76,6 +77,8 @@ pub fn setup_hooks(tx: event::Tx) -> Result<()> {
         Ok(()) => info!("Detailed damage hooks enabled"),
         Err(error) => warn!("Detailed damage hooks unavailable: {error}"),
     }
+
+    statuses::setup(process.base_address, tx.clone());
 
     // Core DPS tracking. The main damage signature is still stable in game 2.0.2.
     OnProcessDamageHook::new(tx.clone()).setup(&process)?;
@@ -151,6 +154,7 @@ pub(super) fn reset_battle_identity_state() {
 
     player::reset_battle_identity_state();
     enemy_hp::reset();
+    statuses::reset();
     info!("Battle identity caches reset");
 }
 

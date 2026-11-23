@@ -124,11 +124,7 @@ impl MeterWindow {
         config: &mut MeterConfig,
         view: Option<MeterView>,
     ) {
-        // Until the app connects there is nothing to show; keep a placeholder in the menu so
-        // the window can still be positioned.
-        if view.is_none() && !interactive {
-            return;
-        }
+        // Shown whenever it is enabled; until the app connects it holds a placeholder.
 
         let mut flags = WindowFlags::NO_TITLE_BAR
             | WindowFlags::NO_COLLAPSE
@@ -181,7 +177,11 @@ impl MeterWindow {
                             self.draw_table(&mut frame, view, config);
                         }
                     }
-                    None => frame.placeholder("等待 GBFR Logs 连接…  菜单打开时可拖动此窗口"),
+                    None => frame.placeholder(if interactive {
+                        "等待 GBFR Logs 连接…  菜单打开时可拖动此窗口"
+                    } else {
+                        "等待 GBFR Logs 连接…"
+                    }),
                 }
 
                 frame.finish();

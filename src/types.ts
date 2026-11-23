@@ -177,6 +177,49 @@ export type EncounterState = {
   targets: Record<number, EnemyState>;
   /** Damage enemies dealt to each party member, keyed by actor index. Missing in old logs. */
   damageTaken?: Record<number, DamageTakenState>;
+  /** Status effects per party member (actor index) and class name. Missing in old logs. */
+  statuses?: Record<number, Record<string, StatusStats>>;
+};
+
+/** One entry of the combat log (`parser::v1::combat_log::CombatLogEntry`). `time` is in
+ * milliseconds since the start of the encounter. */
+export type CombatLogEntry =
+  | {
+      kind: "damage";
+      time: number;
+      sourceIndex: number;
+      sourceType: CharacterType;
+      childType: CharacterType;
+      targetType: number;
+      action: ActionType;
+      damage: number;
+    }
+  | {
+      kind: "damageTaken";
+      time: number;
+      sourceType: number;
+      targetIndex: number;
+      targetType: CharacterType;
+      damage: number;
+    }
+  | { kind: "sbaReady" | "sbaPerform" | "sbaChain" | "death"; time: number; actorIndex: number }
+  | { kind: "statusApplied"; time: number; actorIndex: number; className: string; sourceType: number | null }
+  | { kind: "statusRemoved"; time: number; actorIndex: number; className: string };
+
+/** Statistics of one status class on one party member. */
+export type StatusStats = {
+  /** RTTI class name, e.g. `StatusAilmentPoison` */
+  className: string;
+  typeId: number;
+  count: number;
+  /** Total time active, in milliseconds */
+  totalMs: number;
+  /** Longest single application, in milliseconds */
+  maxMs: number;
+  /** Applications per source type hash */
+  sources: Record<number, number>;
+  /** Damage taken while it was active; a hit counts for every status active at the time */
+  damageWhileActive: number;
 };
 
 export type DamageTakenState = {
@@ -214,6 +257,15 @@ export type OverlayState = {
   /** Damage taken per party member, most first, filtered by streamer mode. */
   damageTaken: OverlayDamageTaken[];
   damageTakenLabels: { title: string; hits: string; maxHit: string };
+  /** Latest combat log lines, oldest first. */
+  combatLog: OverlayLogLine[];
+};
+
+export type OverlayLogLine = {
+  time: string;
+  text: string;
+  /** 0xRRGGBB */
+  color: number;
 };
 
 export type OverlayDamageTaken = {
@@ -222,6 +274,8 @@ export type OverlayDamageTaken = {
   totalDamage: number;
   hits: number;
   maxHit: number;
+  /** Debuffs and ailments received, longest total first */
+  debuffs: { name: string; count: number; totalMs: number; damage: number }[];
 };
 
 export type OverlayAttackType = {
