@@ -34,6 +34,12 @@ const NPC_COLOR: ImColor32 = ImColor32::from_rgba(230, 200, 255, 220);
 const BODY_COLOR: ImColor32 = ImColor32::from_rgba(120, 200, 255, 150);
 /// Items and treasure boxes: gold, with a filled diamond, to stand out.
 const ITEM_COLOR: ImColor32 = ImColor32::from_rgba(255, 215, 0, 255);
+/// Terrain wireframe colour; its alpha fades from `TERRAIN_ALPHA` near to a fifth far away.
+const TERRAIN_RGB: [u8; 3] = [150, 255, 170];
+const TERRAIN_ALPHA: f32 = 150.0;
+/// Terrain is drawn this far around the camera target, at most `TERRAIN_MAX` triangles.
+const TERRAIN_RADIUS: f32 = 15.0;
+const TERRAIN_MAX: usize = 2500;
 const OBJECT_COLOR: ImColor32 = ImColor32::from_rgba(255, 170, 60, 210);
 /// Segments per full circle of a wireframe.
 const RING_SEGMENTS: usize = 24;
@@ -82,16 +88,36 @@ fn read_vec3(address: usize) -> Option<Vec3> {
 /// Projects world points onto the screen for this frame.
 pub struct Camera {
     eye: Vec3,
+    /// What the camera looks at, about the controlled character.
+    target: Vec3,
     right: Vec3,
     up: Vec3,
     forward: Vec3,
     /// 1 / tan(fov / 2).
     focal: f32,
+    /// The game's picture inside the window: top-left corner and size.
+    origin: [f32; 2],
     screen: [f32; 2],
 }
 
+/// Where the game's picture sits in a window of `display` size: the whole window, or the
+/// largest centred 16:9 rectangle when `fit_16_9` (the game letterboxes other window shapes).
+pub fn viewport(display: [f32; 2], fit_16_9: bool) -> ([f32; 2], [f32; 2]) {
+    const WIDE: f32 = 16.0 / 9.0;
+    if !fit_16_9 || display[0] <= 0.0 || display[1] <= 0.0 {
+        return ([0.0, 0.0], display);
+    }
+    if display[0] / display[1] > WIDE {
+        let width = display[1] * WIDE;
+        ([(display[0] - width) / 2.0, 0.0], [width, display[1]])
+    } else {
+        let height = display[0] / WIDE;
+        ([0.0, (display[1] - height) / 2.0], [display[0], height])
+    }
+}
+
 impl Camera {
-    pub fn read(game_base: usize, screen: [f32; 2]) -> Option<Self> {
+    pub fn read(game_base: usize, (origin, screen): ([f32; 2], [f32; 2])) -> Option<Self> {
         let camera = game_base + CAMERA_RVA;
         let eye = read_vec3(camera + CAMERA_EYE)?;
         let target = read_vec3(camera + CAMERA_TARGET)?;
@@ -105,10 +131,12 @@ impl Camera {
         let up = cross(right, forward);
         Some(Self {
             eye,
+            target,
             right,
             up,
             forward,
             focal: 1.0 / (fov / 2.0).tan(),
+            origin,
             screen,
         })
     }
@@ -124,15 +152,20 @@ impl Camera {
         let x = dot(d, self.right) / depth * self.focal / aspect;
         let y = dot(d, self.up) / depth * self.focal;
         Some([
-            (x + 1.0) * 0.5 * self.screen[0],
-            (1.0 - y) * 0.5 * self.screen[1],
+            self.origin[0] + (x + 1.0) * 0.5 * self.screen[0],
+            self.origin[1] + (1.0 - y) * 0.5 * self.screen[1],
         ])
     }
 }
 
 /// Draws a marker under every tracked enemy and party member.
-pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
-    let camera = Camera::read(game_base, ui.io().display_size);
+pub fn render(
+    ui: &Ui,
+    game_base: usize,
+    state: Option<&OverlayState>,
+    show: &super::config::DebugViewConfig,
+) {
+    let camera = Camera::read(game_base, viewport(ui.io().display_size, show.fit_16_9));
     let damageable = crate::hooks::hurtboxes::actors();
     let party = crate::hooks::statuses::party_instances();
     let (entities, characters) = crate::hooks::entities::characters();
@@ -144,29 +177,52 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
     bodies.dedup();
     let mut body_shapes = Vec::new();
     let mut undecoded = 0;
+    if !show.body_collision {
+        bodies.clear();
+    }
     for instance in bodies {
         let (shapes, other) = crate::hooks::body_collision::of(instance);
         body_shapes.extend(shapes);
         undecoded += other;
     }
-    draw_status(
-        ui,
-        camera.is_some(),
-        &damageable,
-        party.len(),
-        entities,
-        characters.len(),
-        (body_shapes.len(), undecoded),
-    );
+    let (terrain, terrain_total) = match (&camera, show.terrain) {
+        (Some(camera), true) => {
+            crate::hooks::terrain::triangles_near(camera.target, TERRAIN_RADIUS, TERRAIN_MAX)
+        }
+        _ => (Vec::new(), 0),
+    };
+    if show.status_line {
+        draw_status(
+            ui,
+            camera.is_some(),
+            &damageable,
+            party.len(),
+            entities,
+            characters.len(),
+            (body_shapes.len(), undecoded),
+            (terrain.len(), terrain_total),
+        );
+    }
     let Some(camera) = camera else {
         return;
     };
     let draw = ui.get_background_draw_list();
+    for (triangle, alpha) in visible_terrain_cached(&camera, &terrain) {
+        let [r, g, b] = TERRAIN_RGB;
+        polyline(
+            &draw,
+            &camera,
+            &[triangle[0], triangle[1], triangle[2], triangle[0]],
+            ImColor32::from_rgba(r, g, b, (TERRAIN_ALPHA * alpha) as u8),
+        );
+    }
     for shape in body_shapes.iter().filter(|s| s.is_body_sized()) {
         draw_shape(&draw, &camera, shape, BODY_COLOR);
     }
     drop(draw);
-    draw_hits(ui, &camera, state);
+    if show.hit_points {
+        draw_hits(ui, &camera, state);
+    }
     let draw = ui.get_background_draw_list();
     let mark = |instance: usize, label: &str, color: ImColor32| {
         let Some(feet) = read_vec3(instance + ACTOR_POSITION) else {
@@ -200,7 +256,7 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
     let tracked = crate::hooks::enemy_hp::snapshot();
     for object in damageable
         .iter()
-        .filter(|a| !a.enemy && !a.player && a.is_field_object())
+        .filter(|a| show.objects && !a.enemy && !a.player && a.is_field_object())
     {
         let mut any = false;
         for hurtbox in crate::hooks::hurtboxes::of(object.instance)
@@ -219,7 +275,10 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
             mark(object.instance, &object.class, OBJECT_COLOR);
         }
     }
-    for actor in damageable.iter().filter(|actor| actor.enemy) {
+    for actor in damageable
+        .iter()
+        .filter(|actor| actor.enemy && (show.enemies || show.hurtboxes || show.facing))
+    {
         let instance = actor.instance;
         let name = tracked
             .iter()
@@ -232,14 +291,13 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
                     .map(|e| e.name.clone())
             })
             .unwrap_or_else(|| actor.class.clone());
-        let actor = actor.clone();
         let label = match hp_percent(instance) {
             Some(percent) => format!("{name} {percent:.0}%"),
             None => name,
         };
         for hurtbox in crate::hooks::hurtboxes::of(instance)
             .into_iter()
-            .filter(|h| h.shape.is_body_sized())
+            .filter(|h| show.hurtboxes && h.shape.is_body_sized())
         {
             let color = if hurtbox.enabled {
                 HURTBOX_COLOR
@@ -248,8 +306,13 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
             };
             draw_shape(&draw, &camera, &hurtbox.shape, color);
         }
-        mark(instance, &label, ENEMY_COLOR);
+        if show.enemies {
+            mark(instance, &label, ENEMY_COLOR);
+        }
         // The facing the hit points turn with, to check it against the body.
+        if !show.facing {
+            continue;
+        }
         if let (Some(feet), Some(forward)) = (
             read_vec3(instance + ACTOR_POSITION),
             crate::hooks::hits::forward(instance),
@@ -267,7 +330,7 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
             }
         }
     }
-    for &(actor_index, instance) in &party {
+    for &(actor_index, instance) in party.iter().filter(|_| show.party) {
         let name = state
             .and_then(|state| state.players.iter().find(|p| p.index == actor_index))
             .map(|p| p.name.clone())
@@ -275,10 +338,9 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
         mark(instance, &name, PARTY_COLOR);
     }
     // Player characters the party list does not know, e.g. outside quests.
-    for player in damageable
-        .iter()
-        .filter(|a| a.player && !party.iter().any(|(_, instance)| *instance == a.instance))
-    {
+    for player in damageable.iter().filter(|a| {
+        show.party && a.player && !party.iter().any(|(_, instance)| *instance == a.instance)
+    }) {
         mark(player.instance, &player.class, PARTY_COLOR);
     }
     // Everyone else on the field: NPCs, and characters that cannot take damage right now.
@@ -286,6 +348,16 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
     // One townsperson can be several entities (body and behaviour) at one spot: mark it once.
     let mut marked: Vec<Vec3> = Vec::new();
     for character in &characters {
+        let wanted = match character.kind {
+            Kind::Player => show.party,
+            Kind::Npc => show.npcs,
+            Kind::Enemy => show.enemies,
+            Kind::Item => show.items,
+            Kind::Object => show.objects,
+        };
+        if !wanted {
+            continue;
+        }
         let instance = character.instance;
         if party.iter().any(|(_, i)| *i == instance)
             || damageable
@@ -360,17 +432,137 @@ fn draw_status(
     entities: usize,
     characters: usize,
     (capsules, undecoded): (usize, usize),
+    (terrain, terrain_total): (usize, usize),
 ) {
     let enemies = damageable.iter().filter(|a| a.enemy).count();
     let players = damageable.iter().filter(|a| a.player).count();
     let others = damageable.len() - enemies - players;
     let text = format!(
-        "调试视图  相机：{}  可受击：敌人 {enemies} / 玩家 {players} / 其他 {others}  队员：{party}  实体表：{entities}（角色/物件 {characters}）  身体碰撞：胶囊 {capsules} / 未解码 {undecoded}",
+        "调试视图  相机：{}  可受击：敌人 {enemies} / 玩家 {players} / 其他 {others}  队员：{party}  实体表：{entities}（角色/物件 {characters}）  身体碰撞：胶囊 {capsules} / 未解码 {undecoded}  地形：{terrain} / {terrain_total} 三角形",
         if camera_ok { "正常" } else { "读取失败" },
     );
     let draw = ui.get_background_draw_list();
     draw.add_text([11.0, 9.0], SHADOW_COLOR, &text);
     draw.add_text([10.0, 8.0], ImColor32::from_rgba(255, 255, 255, 220), &text);
+}
+
+/// Occlusion tests per frame above which hidden terrain is not culled, to keep the frame rate.
+const OCCLUSION_BUDGET: usize = 3_000_000;
+
+/// Whether the segment from `from` to `to` passes through `triangle` before reaching `to`
+/// (Möller–Trumbore, both faces).
+fn blocks(from: Vec3, to: Vec3, triangle: &crate::hooks::terrain::Triangle) -> bool {
+    let [a, b, c] = *triangle;
+    let direction = sub(to, from);
+    let edge1 = sub(b, a);
+    let edge2 = sub(c, a);
+    let p = cross(direction, edge2);
+    let det = dot(edge1, p);
+    if det.abs() < 1.0e-8 {
+        return false;
+    }
+    let inv = 1.0 / det;
+    let s = sub(from, a);
+    let u = dot(s, p) * inv;
+    if !(0.0..=1.0).contains(&u) {
+        return false;
+    }
+    let q = cross(s, edge1);
+    let v = dot(direction, q) * inv;
+    if v < 0.0 || u + v > 1.0 {
+        return false;
+    }
+    let t = dot(edge2, q) * inv;
+    // Hits right at the end are the target itself or what it touches.
+    t > 1.0e-4 && t < 0.995
+}
+
+type VisibleTerrain = Vec<(crate::hooks::terrain::Triangle, f32)>;
+
+/// How often the occlusion test is redone; frames in between draw the last result.
+const OCCLUSION_EVERY: std::time::Duration = std::time::Duration::from_millis(66);
+static VISIBLE_TERRAIN: std::sync::Mutex<Option<(std::time::Instant, VisibleTerrain)>> =
+    std::sync::Mutex::new(None);
+
+/// `visible_terrain`, recomputed at most every `OCCLUSION_EVERY`.
+fn visible_terrain_cached(
+    camera: &Camera,
+    terrain: &[crate::hooks::terrain::Triangle],
+) -> VisibleTerrain {
+    let mut cache = VISIBLE_TERRAIN.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, visible)) = cache.as_ref() {
+        if at.elapsed() < OCCLUSION_EVERY {
+            return visible.clone();
+        }
+    }
+    let visible = visible_terrain(camera, terrain);
+    *cache = Some((std::time::Instant::now(), visible.clone()));
+    visible
+}
+
+/// Terrain triangles to draw with their opacity: facing the camera, on screen, and not hidden
+/// behind other terrain. A triangle shows if its centre or a point near one of its corners can be
+/// seen from the camera; every nearby triangle, either face, can hide it.
+fn visible_terrain(
+    camera: &Camera,
+    terrain: &[crate::hooks::terrain::Triangle],
+) -> Vec<(crate::hooks::terrain::Triangle, f32)> {
+    let candidates: Vec<(usize, f32)> = terrain
+        .iter()
+        .enumerate()
+        .filter_map(|(i, t)| terrain_visibility(camera, t).map(|alpha| (i, alpha)))
+        .collect();
+    if candidates.len() * terrain.len() * 4 > OCCLUSION_BUDGET {
+        return candidates
+            .into_iter()
+            .map(|(i, a)| (terrain[i], a))
+            .collect();
+    }
+    candidates
+        .into_iter()
+        .filter(|&(index, _)| {
+            let [a, b, c] = terrain[index];
+            let centre = scale(add(add(a, b), c), 1.0 / 3.0);
+            let towards = |corner: Vec3| add(centre, scale(sub(corner, centre), 0.8));
+            [centre, towards(a), towards(b), towards(c)]
+                .into_iter()
+                .any(|point| {
+                    !terrain
+                        .iter()
+                        .enumerate()
+                        .any(|(other, t)| other != index && blocks(camera.eye, point, t))
+                })
+        })
+        .map(|(i, alpha)| (terrain[i], alpha))
+        .collect()
+}
+
+/// Whether a terrain triangle is worth drawing, as an opacity factor: it must face the camera
+/// (back faces of walls and the underside of floors are culled) and lie on screen, and it fades
+/// with distance from the camera target.
+fn terrain_visibility(camera: &Camera, triangle: &crate::hooks::terrain::Triangle) -> Option<f32> {
+    let [a, b, c] = *triangle;
+    // Clockwise front faces (see `hooks::terrain::parse`): this normal points behind the face.
+    let normal = cross(sub(b, a), sub(c, a));
+    if dot(normal, sub(camera.eye, a)) >= 0.0 {
+        return None;
+    }
+    let margin = 0.1;
+    let on_screen = triangle.iter().any(|corner| {
+        camera.project(*corner).is_some_and(|p| {
+            let x = p[0] - camera.origin[0];
+            let y = p[1] - camera.origin[1];
+            x >= -camera.screen[0] * margin
+                && x <= camera.screen[0] * (1.0 + margin)
+                && y >= -camera.screen[1] * margin
+                && y <= camera.screen[1] * (1.0 + margin)
+        })
+    });
+    if !on_screen {
+        return None;
+    }
+    let distance = crate::hooks::terrain::box_distance2(triangle, camera.target).sqrt();
+    Some((1.0 - distance / TERRAIN_RADIUS).clamp(0.2, 1.0))
 }
 
 /// Actor HP (i64 at +0x160, max at +0x168) as a percentage.
@@ -550,13 +742,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_wall_hides_what_is_behind_it() {
+        let wall = [[-1.0, -1.0, 5.0], [1.0, -1.0, 5.0], [0.0, 2.0, 5.0]];
+        assert!(blocks([0.0, 0.0, 0.0], [0.0, 0.0, 10.0], &wall));
+        assert!(!blocks([0.0, 0.0, 0.0], [0.0, 0.0, 4.0], &wall));
+        assert!(!blocks([0.0, 0.0, 0.0], [5.0, 0.0, 10.0], &wall));
+    }
+
+    #[test]
+    fn letterboxes_to_16_9() {
+        // A 16:10 window: bars above and below.
+        let (origin, size) = viewport([2420.0, 1512.0], true);
+        assert!((size[0] - 2420.0).abs() < 1e-3 && (size[1] - 1361.25).abs() < 1e-2);
+        assert!((origin[1] - 75.375).abs() < 1e-2 && origin[0] == 0.0);
+        // Ultrawide: bars left and right, unless the game fills the window.
+        let (origin, size) = viewport([3440.0, 1440.0], true);
+        assert!((size[0] - 2560.0).abs() < 1e-3 && (origin[0] - 440.0).abs() < 1e-3);
+        assert_eq!(
+            viewport([3440.0, 1440.0], false),
+            ([0.0, 0.0], [3440.0, 1440.0])
+        );
+    }
+
+    #[test]
     fn projects_the_look_at_target_to_the_screen_centre() {
         let camera = Camera {
             eye: [0.0, 2.0, 10.0],
+            target: [0.0, 2.0, 0.0],
             forward: [0.0, 0.0, -1.0],
             right: [1.0, 0.0, 0.0],
             up: [0.0, 1.0, 0.0],
             focal: 1.0 / (0.8727f32 / 2.0).tan(),
+            origin: [0.0, 0.0],
             screen: [1920.0, 1080.0],
         };
         let centre = camera.project([0.0, 2.0, 0.0]).unwrap();

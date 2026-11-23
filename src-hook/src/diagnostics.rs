@@ -63,6 +63,7 @@ fn report() -> Value {
         "party_floats": crate::hooks::statuses::instance_floats(PARTY_FLOATS),
         "enemy_floats": enemy_floats(),
         "characters": characters(),
+        "terrain": terrain(),
     })
 }
 
@@ -108,6 +109,38 @@ fn cameras() -> Value {
                     "vtable_class": crate::hooks::read_value::<usize>(address as *const usize)
                         .and_then(crate::hooks::statuses::class_name_of_vtable),
                     "floats": floats(address, CAMERA_SIZE),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Loaded map collision files: hash, length and their first bytes as hex, to work out the
+/// `.col` format.
+fn terrain() -> Value {
+    const DUMP: usize = 128 << 10;
+    const DUMPED_FILES: usize = 4;
+    let files = crate::hooks::terrain::loaded_files();
+    Value::Array(
+        files
+            .iter()
+            .enumerate()
+            .map(|(index, file)| {
+                let head = if index < DUMPED_FILES {
+                    let bytes = crate::hooks::terrain::bytes(file, DUMP);
+                    let mut hex = String::with_capacity(bytes.len() * 2);
+                    for byte in bytes {
+                        hex.push_str(&format!("{byte:02x}"));
+                    }
+                    Some(hex)
+                } else {
+                    None
+                };
+                json!({
+                    "hash": format!("{:#x}", file.hash),
+                    "data": format!("{:#x}", file.data),
+                    "length": file.length,
+                    "head_hex": head,
                 })
             })
             .collect(),
@@ -185,10 +218,41 @@ fn enemy_floats() -> Value {
                         .iter()
                         .map(|hurtbox| format!("{hurtbox:?}"))
                         .collect::<Vec<_>>(),
+
+                    "break_parts_info": break_parts_info(instance),
                 })
             })
             .collect(),
     )
+}
+
+/// An enemy's `ExEmBreakPartsInfo`: its offset, and the vector at `+0x10` (begin, end, capacity)
+/// of plain part records, dumped raw, to work out the record layout.
+fn break_parts_info(instance: usize) -> Value {
+    const DUMP: usize = 0x400;
+    let read_usize = |address: usize| crate::hooks::read_value::<usize>(address as *const usize);
+    let Some(offset) = crate::hooks::rtti::base_offset(instance, "ExEmBreakPartsInfo") else {
+        return Value::Null;
+    };
+    let info = instance + offset;
+    let begin = read_usize(info + 0x10).unwrap_or(0);
+    let end = read_usize(info + 0x18).unwrap_or(0);
+    let capacity = read_usize(info + 0x20).unwrap_or(0);
+    let bytes = end.saturating_sub(begin);
+    let words: Vec<String> = (0..bytes.min(DUMP) / 4)
+        .filter_map(|i| {
+            crate::hooks::read_value::<u32>((begin + i * 4) as *const u32).map(|w| format!("{w:x}"))
+        })
+        .collect();
+    json!({
+        "offset": format!("+{offset:#x}"),
+        "begin": format!("{begin:#x}"),
+        "bytes": bytes,
+        "capacity_bytes": capacity.saturating_sub(begin),
+        "header_floats": floats(info, 0x40),
+        "records_f32": floats(begin, bytes.min(DUMP)),
+        "records_u32": words,
+    })
 }
 
 /// `ExCollision` of every tracked enemy and party member: where it is, its element vector at

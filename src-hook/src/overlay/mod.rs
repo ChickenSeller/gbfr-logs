@@ -200,8 +200,6 @@ impl OverlayRenderLoop {
                 if ui.button("清空数据") {
                     self.clear_data();
                 }
-                ui.same_line();
-                ui.checkbox("调试：显示实体标记", &mut self.config.debug_view);
                 if ui.is_item_hovered() {
                     ui.tooltip_text(
                         "清空各窗口的统计，从下一次命中重新开始。已有数据会先保存为一条日志。",
@@ -230,6 +228,9 @@ impl OverlayRenderLoop {
                 }
                 if self.section(ui, "font", "字体") {
                     self.render_font_settings(ui);
+                }
+                if self.section(ui, "debug_view", "调试视图") {
+                    self.render_debug_view_settings(ui);
                 }
                 ui.separator();
                 ui.text_disabled(format!(
@@ -261,6 +262,38 @@ impl OverlayRenderLoop {
             self.meter.reset_position();
         }
         ui.text_disabled("菜单打开时可直接拖动伤害统计窗口");
+    }
+
+    /// One checkbox per part of the debug view, two per row.
+    fn render_debug_view_settings(&mut self, ui: &imgui::Ui) {
+        ui.checkbox("启用调试视图", &mut self.config.debug_view);
+        let debug = &mut self.config.debug;
+        let toggles: [(&str, &mut bool); 11] = [
+            ("状态行", &mut debug.status_line),
+            ("敌人标记", &mut debug.enemies),
+            ("受击判定框", &mut debug.hurtboxes),
+            ("敌人朝向", &mut debug.facing),
+            ("命中点", &mut debug.hit_points),
+            ("队员与玩家", &mut debug.party),
+            ("NPC", &mut debug.npcs),
+            ("道具与宝箱", &mut debug.items),
+            ("场景物件", &mut debug.objects),
+            ("身体碰撞", &mut debug.body_collision),
+            ("地形碰撞", &mut debug.terrain),
+        ];
+        for (i, (label, value)) in toggles.into_iter().enumerate() {
+            if i % 2 == 1 {
+                ui.same_line_with_pos(160.0);
+            }
+            ui.checkbox(label, value);
+        }
+        ui.checkbox("画面按 16:9 显示（有黑边时）", &mut debug.fit_16_9);
+        if ui.is_item_hovered() {
+            ui.tooltip_text("游戏画面四周有黑边时打开；带鱼屏等画面铺满窗口时关闭，标记才能对准。");
+        }
+        if ui.button("全部显示") {
+            *debug = config::DebugViewConfig::default();
+        }
     }
 
     /// A collapsible menu section; returns whether it is open. The saved folding is applied the
@@ -614,7 +647,7 @@ impl ImguiRenderLoop for OverlayRenderLoop {
         if self.config.debug_view {
             if let Some(base) = crate::diagnostics::game_base() {
                 let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);
-                debug_view::render(ui, base, state);
+                debug_view::render(ui, base, state, &self.config.debug);
             }
         }
         if self.config.show_combat_log {

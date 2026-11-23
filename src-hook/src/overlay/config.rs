@@ -39,8 +39,51 @@ pub struct OverlayConfig {
     pub collapsed_sections: Vec<String>,
     /// Top-left corner of the settings menu; `None` until it has been moved.
     pub menu_position: Option<[f32; 2]>,
-    /// Experimental: marks tracked actors in the 3D scene.
+    /// Experimental: marks tracked actors in the 3D scene. Not saved: every start is without it,
+    /// while what it shows (`debug`) is remembered.
+    #[serde(skip)]
     pub debug_view: bool,
+    /// What the debug view draws.
+    pub debug: DebugViewConfig,
+}
+
+/// Parts of the debug view, each shown or hidden on its own.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct DebugViewConfig {
+    pub status_line: bool,
+    pub enemies: bool,
+    pub hurtboxes: bool,
+    pub facing: bool,
+    pub hit_points: bool,
+    pub party: bool,
+    pub npcs: bool,
+    pub items: bool,
+    pub objects: bool,
+    pub body_collision: bool,
+    pub terrain: bool,
+    /// The game draws a 16:9 picture centred in the window (black bars around it); off when it
+    /// fills the window, e.g. on ultrawide screens.
+    pub fit_16_9: bool,
+}
+
+impl Default for DebugViewConfig {
+    fn default() -> Self {
+        Self {
+            status_line: true,
+            enemies: true,
+            hurtboxes: true,
+            facing: true,
+            hit_points: true,
+            party: true,
+            npcs: true,
+            items: true,
+            objects: true,
+            body_collision: true,
+            terrain: true,
+            fit_16_9: true,
+        }
+    }
 }
 
 impl Default for OverlayConfig {
@@ -59,6 +102,7 @@ impl Default for OverlayConfig {
             collapsed_sections: Vec::new(),
             menu_position: None,
             debug_view: false,
+            debug: DebugViewConfig::default(),
         }
     }
 }
@@ -310,6 +354,18 @@ pub fn save(config: &OverlayConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_view_starts_off_every_time() {
+        let config = OverlayConfig {
+            debug_view: true,
+            ..OverlayConfig::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("\"debug_view\""));
+        let loaded: OverlayConfig = serde_json::from_str(&json).unwrap();
+        assert!(!loaded.debug_view);
+    }
 
     #[test]
     fn missing_fields_use_defaults() {

@@ -17,6 +17,7 @@ use crate::{event, process::Process};
 use self::{damage::OnProcessDamageHook, player::OnLoadPlayerIdentityHook, quest::OnBattleEndHook};
 
 mod area;
+pub mod body_collision;
 mod damage;
 mod damage_details;
 mod death;
@@ -24,7 +25,6 @@ pub mod enemy_hp;
 pub mod entities;
 mod ffi;
 mod globals;
-pub mod body_collision;
 pub mod hits;
 pub mod hurtboxes;
 mod player;
@@ -32,6 +32,7 @@ mod quest;
 pub mod rtti;
 mod sba;
 pub mod statuses;
+pub mod terrain;
 
 type GetEntityHashID0x58 = unsafe extern "system" fn(*const usize, *const u32) -> *const usize;
 
@@ -156,13 +157,16 @@ pub fn actor_type_id(actor_ptr: *const usize) -> u32 {
 }
 
 /// The type id `actor_type_id` would return, read without calling game code: every actor class
-/// implements vtable slot 0x58 as `mov rax, rdx; mov dword [rdx], imm32; ret` (game 2.0.2), so
+/// implements vtable slot 0x58 as `mov rax, rdx; mov dword [rdx], imm32; ret` (game 2.0.2, bytes
+/// `48 89 D0 C7 02 imm32 C3`), so
 /// the id is the immediate. Safe from any thread; `None` if the function looks different.
 pub fn static_type_id(instance: usize) -> Option<u32> {
     let vtable = read_process_value::<usize>(instance as *const usize)?;
     let function = read_process_value::<usize>((vtable + 0x58) as *const usize)?;
     let code = read_process_value::<[u8; 10]>(function as *const [u8; 10])?;
-    (code[..5] == [0x48, 0x8B, 0xC2, 0xC7, 0x02] && code[9] == 0xC3)
+    // `mov rax, rdx` has two encodings; the game uses 48 89 D0.
+    let mov_rax_rdx = code[..3] == [0x48, 0x89, 0xD0] || code[..3] == [0x48, 0x8B, 0xC2];
+    (mov_rax_rdx && code[3..5] == [0xC7, 0x02] && code[9] == 0xC3)
         .then(|| u32::from_le_bytes([code[5], code[6], code[7], code[8]]))
         .filter(|id| *id != 0)
 }
