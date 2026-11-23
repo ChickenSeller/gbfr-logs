@@ -39,6 +39,8 @@ pub struct OverlayConfig {
     pub collapsed_sections: Vec<String>,
     /// Top-left corner of the settings menu; `None` until it has been moved.
     pub menu_position: Option<[f32; 2]>,
+    /// Experimental: marks tracked actors in the 3D scene.
+    pub debug_view: bool,
 }
 
 impl Default for OverlayConfig {
@@ -56,6 +58,7 @@ impl Default for OverlayConfig {
             menu_hotkey: super::hotkey::KeyCombo::default(),
             collapsed_sections: Vec::new(),
             menu_position: None,
+            debug_view: false,
         }
     }
 }

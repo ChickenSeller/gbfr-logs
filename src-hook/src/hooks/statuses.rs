@@ -232,6 +232,38 @@ fn poll(tx: &event::Tx) {
     }
 }
 
+/// Tracked party members as (actor index, instance), for the overlay's debug view.
+pub fn party_instances() -> Vec<(u32, usize)> {
+    ACTORS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .map(|actor| (actor.actor_index, actor.instance))
+        .collect()
+}
+
+/// RTTI class name of a vtable, for the diagnostics export.
+pub fn class_name_of_vtable(vtable: usize) -> Option<String> {
+    class_name(vtable)
+}
+
+/// The first `len` bytes of every tracked party member as floats, for the diagnostics export.
+pub fn instance_floats(len: usize) -> serde_json::Value {
+    let actors = ACTORS.lock().unwrap_or_else(|e| e.into_inner());
+    serde_json::Value::Array(
+        actors
+            .iter()
+            .map(|actor| {
+                serde_json::json!({
+                    "actor_index": actor.actor_index,
+                    "actor_type": format!("{:#x}", actor.actor_type),
+                    "floats": crate::diagnostics::floats(actor.instance, len),
+                })
+            })
+            .collect(),
+    )
+}
+
 /// Live state of the tracked party members, for the diagnostics export: their classes, the
 /// `ExStatus` check and each active status with the raw fields around its timers.
 pub fn probe() -> serde_json::Value {

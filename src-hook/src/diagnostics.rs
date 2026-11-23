@@ -16,6 +16,11 @@ static TX: OnceLock<event::Tx> = OnceLock::new();
 static GAME_BASE: OnceLock<usize> = OnceLock::new();
 static NOTES: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
+/// The game's base address, once the hooks are set up.
+pub fn game_base() -> Option<usize> {
+    GAME_BASE.get().copied()
+}
+
 pub fn setup(game_base: usize, tx: event::Tx) {
     let _ = GAME_BASE.set(game_base);
     let _ = TX.set(tx);
@@ -53,7 +58,55 @@ fn report() -> Value {
         "setup": notes,
         "party": crate::hooks::statuses::probe(),
         "enemies": crate::hooks::enemy_hp::probe(),
+        "cameras": cameras(),
+        "party_floats": crate::hooks::statuses::instance_floats(PARTY_FLOATS),
     })
+}
+
+/// Global `cCameraApp` objects (RVAs of the six statics destroyed at exit, game 2.0.2).
+const CAMERA_RVAS: [usize; 6] = [
+    0x7C2_4860, 0x701_E1D0, 0x701_E600, 0x701_E9F0, 0x701_EDE0, 0x701_F1A0,
+];
+const CAMERA_SIZE: usize = 0x440;
+/// Bytes of each party member instance dumped as floats, to find world positions.
+const PARTY_FLOATS: usize = 0x800;
+
+/// Floats of `len` bytes at `address`, rounded; unreadable words are null.
+pub fn floats(address: usize, len: usize) -> Value {
+    Value::Array(
+        (0..len)
+            .step_by(4)
+            .map(|offset| {
+                crate::hooks::read_value::<f32>((address + offset) as *const f32)
+                    .filter(|value| value.is_finite() && value.abs() < 1.0e9)
+                    .map_or(Value::Null, |value| {
+                        json!((value * 10_000.0).round() / 10_000.0)
+                    })
+            })
+            .collect(),
+    )
+}
+
+/// The global camera objects as float arrays, to find the view and projection matrices.
+fn cameras() -> Value {
+    let base = GAME_BASE.get().copied().unwrap_or(0);
+    if base == 0 {
+        return Value::Null;
+    }
+    Value::Array(
+        CAMERA_RVAS
+            .iter()
+            .map(|rva| {
+                let address = base + rva;
+                json!({
+                    "rva": format!("{rva:#x}"),
+                    "vtable_class": crate::hooks::read_value::<usize>(address as *const usize)
+                        .and_then(crate::hooks::statuses::class_name_of_vtable),
+                    "floats": floats(address, CAMERA_SIZE),
+                })
+            })
+            .collect(),
+    )
 }
 
 fn game_info() -> Value {

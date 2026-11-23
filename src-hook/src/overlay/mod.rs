@@ -17,6 +17,7 @@ mod combat_log;
 mod config;
 mod cursor;
 mod damage_taken;
+mod debug_view;
 mod dinput;
 mod enemy_hp;
 mod feed;
@@ -199,6 +200,8 @@ impl OverlayRenderLoop {
                 if ui.button("清空数据") {
                     self.clear_data();
                 }
+                ui.same_line();
+                ui.checkbox("调试：显示实体标记", &mut self.config.debug_view);
                 if ui.is_item_hovered() {
                     ui.tooltip_text(
                         "清空各窗口的统计，从下一次命中重新开始。已有数据会先保存为一条日志。",
@@ -606,6 +609,13 @@ impl ImguiRenderLoop for OverlayRenderLoop {
                 .map(|(state, values)| meter::MeterView { state, values });
             self.meter
                 .render(ui, self.menu_open, &mut self.config.meter, view);
+        }
+        // Under the windows: the background draw list, independent of the windows' lists.
+        if self.config.debug_view {
+            if let Some(base) = crate::diagnostics::game_base() {
+                let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);
+                debug_view::render(ui, base, state);
+            }
         }
         if self.config.show_combat_log {
             let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);
