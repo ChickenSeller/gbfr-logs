@@ -1,7 +1,7 @@
 import { ATTACK_CATEGORIES, ATTACK_CATEGORY_COLORS, attackComposition } from "@/attackCategories";
 import { formatCombatLogEntry, partyCharacters } from "@/combatLog";
 import { computeSkillBreakdown } from "@/components/useSkillBreakdown";
-import { isDebuff, sortStatuses, statusName } from "@/statuses";
+import { isDebuff, isHighlighted, sortStatuses, statusName } from "@/statuses";
 import {
   CharacterType,
   CombatLogEntry,
@@ -158,7 +158,8 @@ export const buildOverlayState = (
   encounterState: EncounterState,
   partyData: Array<PlayerData | null>,
   settings: OverlaySettings,
-  combatLog: CombatLogEntry[] = []
+  combatLog: CombatLogEntry[] = [],
+  trackedEnemies: number[] = []
 ): OverlayState => {
   const { values } = settings;
   const partyColors = values.partyColors.map(rgbToHex);
@@ -203,7 +204,7 @@ export const buildOverlayState = (
     dps: encounterState.dps || 0,
     settings,
     players: rows,
-    enemies: overlayEnemies(encounterState),
+    enemies: overlayEnemies(encounterState, trackedEnemies),
     damageTaken: overlayDamageTaken(encounterState, partyData, players, partyColors, values),
     combatLog: overlayCombatLog(combatLog, encounterState, partyData, partyColors, values),
     damageTakenLabels: {
@@ -264,6 +265,7 @@ const overlayDamageTaken = (
         count: stats.count,
         totalMs: toCount(stats.totalMs),
         damage: toCount(stats.damageWhileActive ?? 0),
+        highlight: isHighlighted(stats.className),
       }));
     const memberTaken = taken[index];
     if (!memberTaken && debuffs.length === 0) return [];
@@ -297,8 +299,9 @@ const overlayDamageTaken = (
 };
 
 /** One name per enemy type hit in the encounter. */
-const overlayEnemies = (encounterState: EncounterState): OverlayEnemy[] => {
-  const hashes = new Set<number>();
+/** Names for every enemy that took damage, and for the ones the overlay tracks besides. */
+const overlayEnemies = (encounterState: EncounterState, trackedEnemies: number[] = []): OverlayEnemy[] => {
+  const hashes = new Set<number>(trackedEnemies.map((hash) => hash >>> 0));
   for (const target of Object.values(encounterState.targets ?? {})) {
     if (typeof target.rawTargetType === "number") hashes.add(target.rawTargetType >>> 0);
   }

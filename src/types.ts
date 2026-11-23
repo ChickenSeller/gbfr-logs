@@ -276,7 +276,7 @@ export type OverlayDamageTaken = {
   hits: number;
   maxHit: number;
   /** Debuffs and ailments received, longest total first */
-  debuffs: { name: string; count: number; totalMs: number; damage: number }[];
+  debuffs: { name: string; count: number; totalMs: number; damage: number; highlight: boolean }[];
 };
 
 export type OverlayAttackType = {

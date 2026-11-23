@@ -534,6 +534,15 @@ impl OverlayRenderLoop {
                 .collect(),
             menu_open: self.menu_open,
             menu_hotkey: self.config.menu_hotkey.label(),
+            tracked_enemies: {
+                let mut hashes: Vec<u32> = crate::hooks::enemy_hp::instances()
+                    .into_iter()
+                    .map(|(hash, _)| hash)
+                    .collect();
+                hashes.sort_unstable();
+                hashes.dedup();
+                hashes
+            },
         };
         let due = self.last_ui_state.as_ref().map_or(true, |(last, sent)| {
             *last != state || sent.elapsed() >= UI_STATE_RESEND

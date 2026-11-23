@@ -204,6 +204,7 @@
       "kind-partBreak": "Part Breaks"
     },
     "statuses": {
+      "StatusDebuffGrab": "Grabbed (throw)",
       "StatusAilmentPoison": "Poison",
       "StatusAilmentBurn": "Burn",
       "StatusAilmentParalyze": "Paralysis",

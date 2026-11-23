@@ -16,6 +16,7 @@ use crate::{event, process::Process};
 
 use self::{damage::OnProcessDamageHook, player::OnLoadPlayerIdentityHook, quest::OnBattleEndHook};
 
+pub mod actions;
 mod area;
 pub mod body_collision;
 mod damage;

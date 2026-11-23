@@ -204,6 +204,7 @@
       "kind-partBreak": "부위 파괴"
     },
     "statuses": {
+      "StatusDebuffGrab": "잡기 공격",
       "StatusAilmentPoison": "독",
       "StatusAilmentBurn": "화상",
       "StatusAilmentParalyze": "마비",

@@ -89,6 +89,23 @@ pub fn class_name(instance: usize) -> Option<String> {
     bases_of(vtable)?.into_iter().next().map(|(name, _)| name)
 }
 
+/// The `Ex*` base of `instance` that `offset` falls in: the one with the largest displacement
+/// not past it, with that displacement, and of the bases sharing it the most derived (listed
+/// first in the hierarchy), e.g. `ExActDamageCapture` rather than its `ExPlayerActBase`. Names
+/// an action from a pointer into the object.
+pub fn ex_base_at(instance: usize, offset: usize) -> Option<(String, usize)> {
+    let vtable = read_process_value::<usize>(instance as *const usize)?;
+    let bases = bases_of(vtable)?;
+    let displacement = bases
+        .iter()
+        .filter(|(name, base)| name.starts_with("Ex") && *base <= offset)
+        .map(|(_, base)| *base)
+        .max()?;
+    bases
+        .into_iter()
+        .find(|(name, base)| name.starts_with("Ex") && *base == displacement)
+}
+
 /// Whether `instance` derives from `name`.
 pub fn has_base(instance: usize, name: &str) -> bool {
     base_offset(instance, name).is_some()

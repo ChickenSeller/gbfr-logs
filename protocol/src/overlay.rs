@@ -89,6 +89,9 @@ pub struct OverlayUiState {
     pub menu_open: bool,
     /// The menu hotkey as shown to the user, e.g. `Ctrl+F8`.
     pub menu_hotkey: String,
+    /// Type hashes of the enemies the overlay tracks, hit or not, so the app can name them:
+    /// it only knows the names of what took damage, and that can be a boss's parts.
+    pub tracked_enemies: Vec<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -222,6 +225,9 @@ pub struct OverlayStatusLine {
     pub total_ms: u64,
     /// Damage taken while it was active.
     pub damage: u64,
+    /// Drawn in a colour of its own: being held in an enemy's grab.
+    #[serde(default)]
+    pub highlight: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]

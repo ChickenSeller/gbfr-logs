@@ -550,6 +550,11 @@ fn connect_and_run_parser(app: AppHandle) {
                                             let _ = window.emit("overlay-settings-change", values);
                                         }
                                         protocol::Message::OverlayUiState(ui_state) => {
+                                            // The front-end names them for the overlay.
+                                            let _ = window.emit(
+                                                "overlay-tracked-enemies",
+                                                ui_state.tracked_enemies.clone(),
+                                            );
                                             apply_overlay_ui_state(&app, ui_state);
                                         }
                                         }

@@ -79,6 +79,8 @@ export const OverlayBridge = () => {
   const previousStatus = usePrevious(encounterState.status);
   // Recent combat log entries; the overlay only shows the last lines.
   const [combatLog, setCombatLog] = useState<CombatLogEntry[]>([]);
+  // Enemies the overlay tracks before they take damage, or whose damage lands on parts.
+  const [trackedEnemies, setTrackedEnemies] = useState<number[]>([]);
 
   const settings = useMeterSettingsStore(
     useShallow((state) => ({
@@ -111,14 +113,21 @@ export const OverlayBridge = () => {
   useEffect(() => {
     const languages = [{ value: SYSTEM_LANGUAGE, label: t("ui.language-system") }, ...LANGUAGES];
     const overlaySettings = buildOverlaySettings(settings, languagePreference, languages, (key) => t(key));
-    const state = buildOverlayState(encounterState, visiblePartyData, overlaySettings, combatLog);
+    const state = buildOverlayState(encounterState, visiblePartyData, overlaySettings, combatLog, trackedEnemies);
     // Without an injected hook the app keeps the latest snapshot for later.
     invoke("push_overlay_state", { state }).catch(() => {});
-  }, [encounterState, visiblePartyData, settings, t, i18n.language, languagePreference, combatLog]);
+  }, [encounterState, visiblePartyData, settings, t, i18n.language, languagePreference, combatLog, trackedEnemies]);
 
   useEffect(() => {
     const listeners = [
       listen("encounter-update", (event: EncounterUpdateEvent) => setEncounterState(event.payload)),
+      listen("overlay-tracked-enemies", (event: { payload: number[] }) =>
+        setTrackedEnemies((previous) =>
+          previous.length === event.payload.length && previous.every((hash, i) => hash === event.payload[i])
+            ? previous
+            : event.payload
+        )
+      ),
       listen("encounter-party-update", (event: PartyUpdateEvent) => setPartyData(event.payload)),
       // Cleared from the in-game menu: the next hit starts a new encounter.
       listen("encounter-cleared", () => {

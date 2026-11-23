@@ -204,6 +204,7 @@
       "kind-partBreak": "部位破坏"
     },
     "statuses": {
+      "StatusDebuffGrab": "被投技抓住",
       "StatusAilmentPoison": "中毒",
       "StatusAilmentBurn": "灼烧",
       "StatusAilmentParalyze": "麻痹",

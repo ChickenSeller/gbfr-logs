@@ -63,6 +63,7 @@ fn report() -> Value {
         "party_floats": crate::hooks::statuses::instance_floats(PARTY_FLOATS),
         "enemy_floats": enemy_floats(),
         "characters": characters(),
+        "party_actions": party_actions(),
         "terrain": terrain(),
     })
 }
@@ -76,6 +77,10 @@ const CAMERA_SIZE: usize = 0x440;
 const PARTY_FLOATS: usize = 0x2000;
 /// Bytes of each tracked enemy dumped as floats, to find orientations.
 const ENEMY_FLOATS: usize = 0x2000;
+/// Bosses (max HP over `BOSS_HP`) are dumped this far, to diff them before and after a part
+/// break.
+const BOSS_FLOATS: usize = 0x10000;
+const BOSS_HP: i64 = 100_000_000;
 
 /// Floats of `len` bytes at `address`, rounded; unreadable words are null.
 pub fn floats(address: usize, len: usize) -> Value {
@@ -147,6 +152,51 @@ fn terrain() -> Value {
     )
 }
 
+/// Each party member's `ExActManager` (offset and first bytes), with every qword that points
+/// into the member named after the `Ex*` base it lands in, to find the current action.
+fn party_actions() -> Value {
+    const WORDS: usize = 0x40;
+    Value::Array(
+        crate::hooks::statuses::party_instances()
+            .into_iter()
+            .map(|(index, instance)| {
+                let class = crate::hooks::rtti::class_name(instance);
+                let Some(offset) = crate::hooks::rtti::base_offset(instance, "ExActManager") else {
+                    return json!({ "index": index, "class": class, "act_manager": null });
+                };
+                let manager = instance + offset;
+                let words: Vec<Value> = (0..WORDS)
+                    .map(|i| {
+                        let word =
+                            crate::hooks::read_value::<usize>((manager + i * 8) as *const usize)
+                                .unwrap_or(0);
+                        let inside = word
+                            .checked_sub(instance)
+                            .filter(|o| *o < 0x20000)
+                            .and_then(|o| {
+                                crate::hooks::rtti::ex_base_at(instance, o).map(|b| (o, b))
+                            });
+                        match inside {
+                            Some((o, (name, base))) => json!(format!(
+                                "+{:#x}: {word:#x} -> +{o:#x} {name}+{:#x}",
+                                i * 8,
+                                o - base
+                            )),
+                            None => json!(format!("+{:#x}: {word:#x}", i * 8)),
+                        }
+                    })
+                    .collect();
+                json!({
+                    "index": index,
+                    "class": class,
+                    "act_manager": format!("+{offset:#x}"),
+                    "words": words,
+                })
+            })
+            .collect(),
+    )
+}
+
 /// Every character and field object in the entity table: class, position, its first bytes as
 /// floats, and its body collision records (offset, raw records as floats and as u32s).
 fn characters() -> Value {
@@ -211,7 +261,15 @@ fn enemy_floats() -> Value {
             .map(|(hash, instance)| {
                 json!({
                     "type_hash": format!("{hash:#x}"),
-                    "floats": floats(instance, ENEMY_FLOATS),
+                    "floats": floats(instance, {
+                        let max_hp = crate::hooks::read_value::<i64>((instance + 0x168) as *const i64)
+                            .unwrap_or(0);
+                        if max_hp > BOSS_HP {
+                            BOSS_FLOATS
+                        } else {
+                            ENEMY_FLOATS
+                        }
+                    }),
                     "ex_damage": crate::hooks::rtti::base_offset(instance, "ExDamage")
                         .map(|offset| format!("+{offset:#x}")),
                     "hurtboxes": crate::hooks::hurtboxes::of(instance)
@@ -220,10 +278,39 @@ fn enemy_floats() -> Value {
                         .collect::<Vec<_>>(),
 
                     "break_parts_info": break_parts_info(instance),
+                    "class_parts": class_parts(instance),
                 })
             })
             .collect(),
     )
+}
+
+/// Boss classes that keep per-part records in an array of their own, as (class, array pointer
+/// offset, count offset, record size): Proto Bahamut (Em7001) at +0x460 / +0x470, 0x520 bytes
+/// each, set up in 0x142893310 (which adds a scaled value to each record's f32 at +0x300).
+const CLASS_PART_ARRAYS: [(&str, usize, usize, usize); 1] = [("Em7001", 0x460, 0x470, 0x520)];
+
+/// An enemy's own part records, if its class is in `CLASS_PART_ARRAYS`: each as floats.
+fn class_parts(instance: usize) -> Value {
+    const MAX_RECORDS: usize = 16;
+    let Some(class) = crate::hooks::rtti::class_name(instance) else {
+        return Value::Null;
+    };
+    let Some(&(_, array, count, size)) = CLASS_PART_ARRAYS.iter().find(|(c, ..)| *c == class)
+    else {
+        return Value::Null;
+    };
+    let read_usize = |address: usize| crate::hooks::read_value::<usize>(address as *const usize);
+    let begin = read_usize(instance + array).unwrap_or(0);
+    let n = read_usize(instance + count).unwrap_or(0);
+    json!({
+        "class": class,
+        "begin": format!("{begin:#x}"),
+        "count": n,
+        "records": (0..n.min(MAX_RECORDS))
+            .map(|i| floats(begin + i * size, size))
+            .collect::<Vec<_>>(),
+    })
 }
 
 /// An enemy's `ExEmBreakPartsInfo`: its offset, and the vector at `+0x10` (begin, end, capacity)

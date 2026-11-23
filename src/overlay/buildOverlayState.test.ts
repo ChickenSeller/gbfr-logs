@@ -181,6 +181,13 @@ describe("buildOverlayState", () => {
     expect(result.players[0].name).toContain("LLK");
   });
 
+  it("names enemies the overlay tracks even before they take damage", () => {
+    const empty = { ...state, targets: {} } as EncounterState;
+    const result = buildOverlayState(empty, partyData, settings, [], [0xdf348320]);
+
+    expect(result.enemies.map((enemy) => enemy.typeHash)).toEqual([0xdf348320]);
+  });
+
   it("reports 0% instead of NaN before any damage", () => {
     const empty = encounter([player(0, "Pl0000", 0, 0)]);
     const result = buildOverlayState(empty, partyData, settings);

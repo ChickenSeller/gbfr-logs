@@ -2,7 +2,7 @@ import { Badge, NumberFormatter, Stack, Table, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 
 import { CombatLogContext, combatLogMember, partyCharacters, sourceName } from "@/combatLog";
-import { formatSeconds, isDebuff, sortStatuses, statusName } from "@/statuses";
+import { formatSeconds, isDebuff, isHighlighted, sortStatuses, statusName } from "@/statuses";
 import { EncounterState, PlayerData, StatusStats } from "@/types";
 
 type Props = {
@@ -77,7 +77,13 @@ export const StatusEffectsTable = ({ encounter, partyData, playerColors, showDis
                       <Badge size="xs" mr={6} color={isDebuff(stats.className) ? "red" : "teal"} variant="light">
                         {isDebuff(stats.className) ? t("ui.status-effects.debuffs") : t("ui.status-effects.buffs")}
                       </Badge>
-                      <Text span size="sm" title={stats.className}>
+                      <Text
+                        span
+                        size="sm"
+                        title={stats.className}
+                        c={isHighlighted(stats.className) ? "yellow" : undefined}
+                        fw={isHighlighted(stats.className) ? 700 : undefined}
+                      >
                         {statusName(stats.className)}
                       </Text>
                     </Table.Td>

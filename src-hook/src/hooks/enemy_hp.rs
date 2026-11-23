@@ -181,6 +181,12 @@ fn plausible(hp: i64, max_hp: i64) -> bool {
     max_hp > 0 && max_hp <= MAX_PLAUSIBLE_HP && (0..=max_hp).contains(&hp)
 }
 
+/// Shots, bits and other behaviour objects (`Behavior*`, e.g. a boss's `BehaviorBh` bits with
+/// 5,000 HP): they take damage but are not enemies worth a bar.
+fn is_behavior_object(instance: usize) -> bool {
+    super::rtti::class_name(instance).is_some_and(|class| class.starts_with("Behavior"))
+}
+
 fn is_player(type_hash: u32) -> bool {
     PLAYER_TYPE_HASHES.contains(&type_hash)
 }
@@ -188,7 +194,7 @@ fn is_player(type_hash: u32) -> bool {
 /// Records a damaged target; called after the game applied the damage. Returns the part that
 /// this hit broke, if any.
 pub fn observe(instance: usize, type_hash: u32) -> Option<PartBreak> {
-    if instance == 0 || type_hash == 0 || is_player(type_hash) {
+    if instance == 0 || type_hash == 0 || is_player(type_hash) || is_behavior_object(instance) {
         return None;
     }
     let (hp, max_hp) = read_hp(instance)?;
@@ -277,7 +283,7 @@ fn discover(tracked: &mut Vec<Tracked>, now: Instant) {
         *last = Some(now);
     }
     for actor in super::hurtboxes::actors() {
-        if !actor.enemy {
+        if !actor.enemy || is_behavior_object(actor.instance) {
             continue;
         }
         if let Some(entry) = tracked.iter_mut().find(|t| t.instance == actor.instance) {

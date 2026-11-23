@@ -18,6 +18,12 @@ export const readableClassName = (className: string): string =>
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .trim();
 
+/** Being held in an enemy's grab: reported by the hook as a debuff of its own. */
+export const GRAB_STATUS = "StatusDebuffGrab";
+
+/** Statuses shown in a colour of their own (yellow) wherever debuffs are listed. */
+export const isHighlighted = (className: string): boolean => className === GRAB_STATUS;
+
 export const statusName = (className: string): string =>
   t([`ui.statuses.${className}`], { defaultValue: readableClassName(className) });
 

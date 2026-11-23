@@ -58,6 +58,7 @@ pub fn setup(game_base: usize, tx: event::Tx) {
     std::thread::spawn(move || loop {
         std::thread::sleep(POLL_INTERVAL);
         poll(&tx);
+        log_action_changes();
     });
     info!("Status tracking enabled");
 }
@@ -203,8 +204,30 @@ fn read_statuses(
             },
         );
     }
+    // Being held in an enemy's grab counts as a debuff of its own, so the damage taken view
+    // counts throws with their time held and the damage taken meanwhile.
+    if let Some((action, name)) = super::actions::current(actor.instance) {
+        if super::actions::is_grabbed(&name) {
+            // Odd, so never a status object's address.
+            let key = actor.instance | 1;
+            let grab = actor.active.get(&key).cloned().unwrap_or(StatusEvent {
+                actor_index: actor.actor_index,
+                actor_type: actor.actor_type,
+                status_id: key as u64,
+                class_name: GRAB_STATUS.to_string(),
+                type_id: GRAB_TYPE_BASE | action,
+                source_type: None,
+            });
+            statuses.insert(key, grab);
+        }
+    }
     Some(statuses)
 }
+
+/// The status a grab is reported as; the app's damage taken view lists it with the debuffs.
+const GRAB_STATUS: &str = "StatusDebuffGrab";
+/// `type_id` of a grab: this, with the action number in the low bits.
+const GRAB_TYPE_BASE: u32 = 0xFFFF_0000;
 
 fn poll(tx: &event::Tx) {
     let mut actors = ACTORS.lock().unwrap_or_else(|e| e.into_inner());
@@ -333,4 +356,33 @@ pub fn probe() -> serde_json::Value {
             })
             .collect(),
     )
+}
+
+/// Logs each party member's action changes by class (e.g. `ExActWait -> ExActDamageCapture`),
+/// to confirm which actions grabs use. Diagnostic; stops after `MAX_LINES`.
+fn log_action_changes() {
+    const MAX_LINES: usize = 600;
+    static LAST: Mutex<Vec<(usize, u32)>> = Mutex::new(Vec::new());
+    static LINES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    if LINES.load(std::sync::atomic::Ordering::Relaxed) >= MAX_LINES {
+        return;
+    }
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    for (index, instance) in party_instances() {
+        let Some((action, name)) = super::actions::current(instance) else {
+            continue;
+        };
+        match last.iter_mut().find(|(i, _)| *i == instance) {
+            Some((_, previous)) if *previous == action => continue,
+            Some((_, previous)) => *previous = action,
+            None => last.push((instance, action)),
+        }
+        LINES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let grabbed = if super::actions::is_grabbed(&name) {
+            " (grabbed)"
+        } else {
+            ""
+        };
+        info!("Party member {index} action {action:#x} {name}{grabbed}");
+    }
 }

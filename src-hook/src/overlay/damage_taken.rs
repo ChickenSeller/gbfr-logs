@@ -17,6 +17,8 @@ const MUTED_COLOR: [f32; 4] = [0.78, 0.78, 0.78, 1.0];
 const DEBUFF_COLOR: [f32; 4] = [1.0, 0.6, 0.55, 1.0];
 /// Debuff application counts, bright green so they read at a glance.
 const COUNT_COLOR: [f32; 4] = [0.35, 0.95, 0.45, 1.0];
+/// Debuffs marked `highlight` (being grabbed): bright yellow.
+const HIGHLIGHT_COLOR: [f32; 4] = [1.0, 0.86, 0.1, 1.0];
 /// Space between the damage bars and the debuff column, in unscaled pixels.
 const DEBUFF_COLUMN_GAP: f32 = 14.0;
 
@@ -160,7 +162,12 @@ impl DamageTakenWindow {
                         );
                         ui.group(|| {
                             for debuff in &row.debuffs {
-                                ui.text_colored(DEBUFF_COLOR, &debuff.name);
+                                let color = if debuff.highlight {
+                                    HIGHLIGHT_COLOR
+                                } else {
+                                    DEBUFF_COLOR
+                                };
+                                ui.text_colored(color, &debuff.name);
                                 // The count stands out; duration and damage stay muted.
                                 ui.same_line();
                                 ui.text_colored(COUNT_COLOR, format!("×{}", debuff.count));
