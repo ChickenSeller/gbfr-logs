@@ -31,6 +31,9 @@ const HURTBOX_COLOR: ImColor32 = ImColor32::from_rgba(80, 255, 120, 200);
 const HURTBOX_OFF_COLOR: ImColor32 = ImColor32::from_rgba(170, 170, 170, 70);
 /// Damageable things that are neither enemies nor players: breakable objects and the like.
 const NPC_COLOR: ImColor32 = ImColor32::from_rgba(230, 200, 255, 220);
+const BODY_COLOR: ImColor32 = ImColor32::from_rgba(120, 200, 255, 150);
+/// Items and treasure boxes: gold, with a filled diamond, to stand out.
+const ITEM_COLOR: ImColor32 = ImColor32::from_rgba(255, 215, 0, 255);
 const OBJECT_COLOR: ImColor32 = ImColor32::from_rgba(255, 170, 60, 210);
 /// Segments per full circle of a wireframe.
 const RING_SEGMENTS: usize = 24;
@@ -133,6 +136,19 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
     let damageable = crate::hooks::hurtboxes::actors();
     let party = crate::hooks::statuses::party_instances();
     let (entities, characters) = crate::hooks::entities::characters();
+    // Body collision of everyone known, each actor once.
+    let mut bodies: Vec<usize> = party.iter().map(|(_, instance)| *instance).collect();
+    bodies.extend(damageable.iter().map(|a| a.instance));
+    bodies.extend(characters.iter().map(|c| c.instance));
+    bodies.sort_unstable();
+    bodies.dedup();
+    let mut body_shapes = Vec::new();
+    let mut undecoded = 0;
+    for instance in bodies {
+        let (shapes, other) = crate::hooks::body_collision::of(instance);
+        body_shapes.extend(shapes);
+        undecoded += other;
+    }
     draw_status(
         ui,
         camera.is_some(),
@@ -140,11 +156,15 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
         party.len(),
         entities,
         characters.len(),
+        (body_shapes.len(), undecoded),
     );
     let Some(camera) = camera else {
         return;
     };
     let draw = ui.get_background_draw_list();
+    for shape in body_shapes.iter().filter(|s| s.is_body_sized()) {
+        draw_shape(&draw, &camera, shape, BODY_COLOR);
+    }
     drop(draw);
     draw_hits(ui, &camera, state);
     let draw = ui.get_background_draw_list();
@@ -274,19 +294,57 @@ pub fn render(ui: &Ui, game_base: usize, state: Option<&OverlayState>) {
         {
             continue;
         }
-        if let Some(feet) = read_vec3(instance + ACTOR_POSITION) {
-            if marked
-                .iter()
-                .any(|p| dot(sub(*p, feet), sub(*p, feet)) < 0.3 * 0.3)
-            {
-                continue;
+        let Some(feet) = read_vec3(instance + ACTOR_POSITION) else {
+            continue;
+        };
+        // Pooled or not yet placed objects sit at the origin.
+        if feet == [0.0, 0.0, 0.0] {
+            continue;
+        }
+        if marked
+            .iter()
+            .any(|p| dot(sub(*p, feet), sub(*p, feet)) < 0.3 * 0.3)
+        {
+            continue;
+        }
+        marked.push(feet);
+        if character.kind == Kind::Item {
+            if let Some(at) = camera.project([feet[0], feet[1] + 0.3, feet[2]]) {
+                let size = 9.0;
+                let diamond = [
+                    [at[0], at[1] - size],
+                    [at[0] + size, at[1]],
+                    [at[0], at[1] + size],
+                    [at[0] - size, at[1]],
+                ];
+                draw.add_triangle(diamond[0], diamond[1], diamond[2], ITEM_COLOR)
+                    .filled(true)
+                    .build();
+                draw.add_triangle(diamond[0], diamond[2], diamond[3], ITEM_COLOR)
+                    .filled(true)
+                    .build();
+                draw.add_polyline(
+                    vec![diamond[0], diamond[1], diamond[2], diamond[3], diamond[0]],
+                    SHADOW_COLOR,
+                )
+                .thickness(1.5)
+                .build();
+                let label = [at[0] + size + 4.0, at[1] - 8.0];
+                draw.add_text(
+                    [label[0] + 1.0, label[1] + 1.0],
+                    SHADOW_COLOR,
+                    &character.class,
+                );
+                draw.add_text(label, ITEM_COLOR, &character.class);
             }
-            marked.push(feet);
+            continue;
         }
         let color = match character.kind {
             Kind::Player => PARTY_COLOR,
             Kind::Npc => NPC_COLOR,
             Kind::Enemy => ENEMY_COLOR,
+            Kind::Object => OBJECT_COLOR,
+            Kind::Item => ITEM_COLOR,
         };
         mark(instance, &character.class, color);
     }
@@ -301,12 +359,13 @@ fn draw_status(
     party: usize,
     entities: usize,
     characters: usize,
+    (capsules, undecoded): (usize, usize),
 ) {
     let enemies = damageable.iter().filter(|a| a.enemy).count();
     let players = damageable.iter().filter(|a| a.player).count();
     let others = damageable.len() - enemies - players;
     let text = format!(
-        "调试视图  相机：{}  可受击：敌人 {enemies} / 玩家 {players} / 其他 {others}  队员：{party}  实体表：{entities}（角色 {characters}）",
+        "调试视图  相机：{}  可受击：敌人 {enemies} / 玩家 {players} / 其他 {others}  队员：{party}  实体表：{entities}（角色/物件 {characters}）  身体碰撞：胶囊 {capsules} / 未解码 {undecoded}",
         if camera_ok { "正常" } else { "读取失败" },
     );
     let draw = ui.get_background_draw_list();

@@ -29,6 +29,10 @@ pub enum Kind {
     Player,
     Npc,
     Enemy,
+    /// Field objects: warps, shops and terminals (`Ba*`, `Et*`).
+    Object,
+    /// Things to pick up: items on the field (`It*`, e.g. `Itf000`) and treasure boxes.
+    Item,
 }
 
 #[derive(Clone, Debug)]
@@ -42,18 +46,21 @@ struct Cache {
     at: Option<Instant>,
     entities: usize,
     characters: Vec<Character>,
+    /// Classes of the last scan that are neither characters nor objects, with counts.
+    others: Vec<(String, usize)>,
 }
 
 static CACHE: Mutex<Cache> = Mutex::new(Cache {
     at: None,
     entities: 0,
     characters: Vec::new(),
+    others: Vec::new(),
 });
 
-/// Townsfolk and animals in towns (seen in the entity table of Folca); the navigation and
-/// model-less helpers of village NPCs are left out.
-const TOWNSFOLK_CLASSES: [&str; 6] = [
-    "VillageNPCObject",
+/// Townsfolk and animals in towns (seen in the entity table of Folca). `VillageNPCEx` is a walking
+/// townsperson. Left out: `VillageNPCObject`, the spots townsfolk walk between and stand at (no
+/// model, no body collision), and the navigation and model-less helpers.
+const TOWNSFOLK_CLASSES: [&str; 5] = [
     "VillageNPCEx",
     "BehaviorNormalNpcBase",
     "BehaviorNormalNpcPlayer",
@@ -66,6 +73,16 @@ const TOWNSFOLK_CLASSES: [&str; 6] = [
 pub fn kind_of(class: &str) -> Option<Kind> {
     if TOWNSFOLK_CLASSES.contains(&class) {
         return Some(Kind::Npc);
+    }
+    if class.starts_with("It") || class == "BaTreasureBox" {
+        return Some(Kind::Item);
+    }
+    // Weapons held by NPCs are entities of their own; their owner is marked already.
+    if (class.starts_with("Ba") || class.starts_with("Et"))
+        && class.len() >= 4
+        && !class.contains("Weapon")
+    {
+        return Some(Kind::Object);
     }
     let bytes = class.as_bytes();
     if bytes.len() != 6 || !bytes[2..].iter().all(u8::is_ascii_hexdigit) {
@@ -91,7 +108,7 @@ fn note_other_class(class: &str) {
     log::info!("Entity table class: {class}");
 }
 
-fn scan() -> Option<(usize, Vec<Character>)> {
+fn scan() -> Option<(usize, Vec<Character>, Vec<(String, usize)>)> {
     let base = super::rtti::game_base()?;
     let header = read_process_value::<usize>((base + TABLE_RVA) as *const usize)?;
     let begin = read_process_value::<usize>((header + ENTITIES) as *const usize)?;
@@ -100,6 +117,7 @@ fn scan() -> Option<(usize, Vec<Character>)> {
         return None;
     }
     let mut characters = Vec::new();
+    let mut others: Vec<(String, usize)> = Vec::new();
     for chunk_start in (0..count).step_by(CHUNK) {
         let Some(slots) =
             read_process_value::<[usize; CHUNK]>((begin + chunk_start * 8) as *const _)
@@ -133,6 +151,10 @@ fn scan() -> Option<(usize, Vec<Character>)> {
             };
             if kind_of(&class).is_none() {
                 note_other_class(&class);
+                match others.iter_mut().find(|(c, _)| *c == class) {
+                    Some((_, n)) => *n += 1,
+                    None => others.push((class.clone(), 1)),
+                }
             }
             if let Some(kind) = kind_of(&class) {
                 if !characters
@@ -148,17 +170,28 @@ fn scan() -> Option<(usize, Vec<Character>)> {
             }
         }
     }
-    Some((count, characters))
+    Some((count, characters, others))
+}
+
+/// Classes in the entity table that are not drawn, with how many of each, for diagnostics.
+pub fn other_classes() -> Vec<(String, usize)> {
+    let _ = characters();
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .others
+        .clone()
 }
 
 /// Characters on the field and the size of the entity table (0 if it could not be read).
 pub fn characters() -> (usize, Vec<Character>) {
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if cache.at.map_or(true, |at| at.elapsed() >= REFRESH_EVERY) {
-        let (entities, characters) = scan().unwrap_or_default();
+        let (entities, characters, others) = scan().unwrap_or_default();
         cache.at = Some(Instant::now());
         cache.entities = entities;
         cache.characters = characters;
+        cache.others = others;
     }
     (cache.entities, cache.characters.clone())
 }
@@ -175,8 +208,13 @@ mod tests {
         assert_eq!(kind_of("Em76a0"), Some(Kind::Enemy));
         assert_eq!(kind_of("Pl0700Ghost"), None);
         assert_eq!(kind_of("BehaviorShot"), None);
-        assert_eq!(kind_of("Ba4002"), None);
-        assert_eq!(kind_of("VillageNPCObject"), Some(Kind::Npc));
+        assert_eq!(kind_of("Ba4002"), Some(Kind::Object));
+        assert_eq!(kind_of("BaTreasureBox"), Some(Kind::Item));
+        assert_eq!(kind_of("EtGemSmith"), Some(Kind::Object));
+        assert_eq!(kind_of("BaNpcWeapon"), None);
+        assert_eq!(kind_of("Itf000"), Some(Kind::Item));
+        assert_eq!(kind_of("VillageNPCEx"), Some(Kind::Npc));
+        assert_eq!(kind_of("VillageNPCObject"), None);
         assert_eq!(kind_of("VillageNPCNavAvoidObject"), None);
     }
 }

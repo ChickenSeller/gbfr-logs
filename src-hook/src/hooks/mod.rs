@@ -24,6 +24,7 @@ pub mod enemy_hp;
 pub mod entities;
 mod ffi;
 mod globals;
+pub mod body_collision;
 pub mod hits;
 pub mod hurtboxes;
 mod player;

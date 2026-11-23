@@ -62,6 +62,7 @@ fn report() -> Value {
         "collisions": collisions(),
         "party_floats": crate::hooks::statuses::instance_floats(PARTY_FLOATS),
         "enemy_floats": enemy_floats(),
+        "characters": characters(),
     })
 }
 
@@ -111,6 +112,62 @@ fn cameras() -> Value {
             })
             .collect(),
     )
+}
+
+/// Every character and field object in the entity table: class, position, its first bytes as
+/// floats, and its body collision records (offset, raw records as floats and as u32s).
+fn characters() -> Value {
+    const CHARACTER_FLOATS: usize = 0x400;
+    let (entities, characters) = crate::hooks::entities::characters();
+    let list: Vec<Value> = characters
+        .iter()
+        .map(|character| {
+            let instance = character.instance;
+            let body = crate::hooks::body_collision::raw(instance);
+            let as_f32 = |bytes: &[u8]| -> Vec<Value> {
+                bytes
+                    .chunks_exact(4)
+                    .map(|c| {
+                        let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+                        if v.is_finite() && v.abs() < 1.0e7 {
+                            json!((v * 10_000.0).round() / 10_000.0)
+                        } else {
+                            Value::Null
+                        }
+                    })
+                    .collect()
+            };
+            let as_u32 = |bytes: &[u8]| -> Vec<String> {
+                bytes
+                    .chunks_exact(4)
+                    .map(|c| format!("{:x}", u32::from_le_bytes([c[0], c[1], c[2], c[3]])))
+                    .collect()
+            };
+            // The joint the first body record is bound to, and the joints around it, to find
+            // where the animated body is (walking townsfolk drift from their root).
+            let joint = body
+                .as_ref()
+                .and_then(|(_, raw)| raw.first())
+                .map(|r| usize::from_le_bytes(r[0x38..0x40].try_into().unwrap()))
+                .filter(|j| *j > 0x10000 && j % 16 == 0);
+            json!({
+                "joint": joint.map(|j| format!("{j:#x}")),
+                "joints_from_minus_0x400": joint.map(|j| floats(j - 0x400, 0x1400)),
+                "class": character.class,
+                "kind": format!("{:?}", character.kind),
+                "instance": format!("{instance:#x}"),
+                "floats": floats(instance, CHARACTER_FLOATS),
+                "ex_obj_hit": body.as_ref().map(|(offset, _)| format!("+{offset:#x}")),
+                "body_records_f32": body.as_ref().map(|(_, raw)| raw.iter().map(|r| as_f32(r)).collect::<Vec<_>>()),
+                "body_records_u32": body.as_ref().map(|(_, raw)| raw.iter().map(|r| as_u32(r)).collect::<Vec<_>>()),
+            })
+        })
+        .collect();
+    let others: Vec<Value> = crate::hooks::entities::other_classes()
+        .into_iter()
+        .map(|(class, count)| json!({ "class": class, "count": count }))
+        .collect();
+    json!({ "entity_capacity": entities, "characters": list, "other_classes": others })
 }
 
 /// The first `ENEMY_FLOATS` bytes of every tracked enemy as floats.
