@@ -134,8 +134,10 @@ pub fn setup(game_base: usize) {
     record("start", json!({ "unix": unix_now() }));
     crate::shutdown::spawn(|| {
         let mut previous: HashMap<usize, HashMap<String, String>> = HashMap::new();
+        let mut damageable: HashMap<usize, (i64, i64)> = HashMap::new();
         while crate::shutdown::sleep(ENEMY_INTERVAL) {
             scan_enemies(&mut previous);
+            scan_damageable(&mut damageable);
             flush();
         }
         flush();
@@ -166,7 +168,7 @@ fn read(address: usize, len: usize) -> Option<Vec<u8>> {
 }
 
 /// The class of the object at `pointer`, if it is one (its vtable lies in the game image).
-fn object_class(pointer: usize) -> Option<String> {
+pub(super) fn object_class(pointer: usize) -> Option<String> {
     if pointer < 0x10000 || pointer > 0x7FFF_FFFF_FFF0 || pointer % 8 != 0 {
         return None;
     }
@@ -207,6 +209,52 @@ fn behaviour_fields(address: usize, len: usize) -> Vec<(usize, String, usize)> {
         }
     }
     fields
+}
+
+/// Every damageable thing that is not a party member, with its HP whenever that changes: a
+/// boss's breakable parts, if they are things of their own, show up here.
+fn scan_damageable(previous: &mut HashMap<usize, (i64, i64)>) {
+    let mut seen = Vec::new();
+    for actor in super::hurtboxes::actors() {
+        if actor.player {
+            continue;
+        }
+        seen.push(actor.instance);
+        let Some(hp_base) = super::rtti::base_offset(actor.instance, "ExHp") else {
+            continue;
+        };
+        let at = actor.instance + hp_base;
+        let (Some(hp), Some(max)) = (
+            read_process_value::<i64>((at + 0x10) as *const i64),
+            read_process_value::<i64>((at + 0x18) as *const i64),
+        ) else {
+            continue;
+        };
+        if previous.get(&actor.instance) == Some(&(hp, max)) {
+            continue;
+        }
+        previous.insert(actor.instance, (hp, max));
+        record(
+            "damageable",
+            json!({
+                "instance": format!("{:#x}", actor.instance),
+                "class": actor.class,
+                "enemy": actor.enemy,
+                "hp": hp,
+                "max": max,
+            }),
+        );
+    }
+    previous.retain(|instance, _| {
+        let alive = seen.contains(instance);
+        if !alive {
+            record(
+                "damageable_gone",
+                json!({ "instance": format!("{instance:#x}") }),
+            );
+        }
+        alive
+    });
 }
 
 fn scan_enemies(previous: &mut HashMap<usize, HashMap<String, String>>) {

@@ -20,7 +20,9 @@ const MAX_HP_OFFSET: usize = 0x168;
 
 /// Breakable part records (game 2.0.2): a part id whose low 16 bits repeat the enemy's class
 /// number (`Em1806` -> 0x21806) and, 8 bytes before it, the part's remaining break value as a
-/// float, drained by stun damage to that part. Found on Ewiyar at +0x27AC / +0x27A4. Other
+/// float, drained by damage to that part (most while the enemy is stunned and its stun damage is
+/// zero, so not by stun). Found on Ewiyar at +0x27AC / +0x27A4: 1500 down to 0 as the part
+/// broke, checked against a recorded fight. Other
 /// enemies keep them elsewhere, so each enemy's first `PART_SCAN_SIZE` bytes are searched once.
 const PART_SCAN_SIZE: usize = 0x10000;
 const PART_DURABILITY_BEFORE_ID: usize = 8;
@@ -122,6 +124,48 @@ fn find_parts(instance: usize, class: u32) -> Vec<usize> {
     offsets
 }
 
+/// The game's list of an enemy's broken parts: a vector of u32 part ids in its
+/// `ExEmBreakPartsInfo`, which gains one entry as each part breaks (seen on Ewiyar and Proto
+/// Bahamut, game 2.0.2). Works for every enemy, also those whose break values are not found.
+const BROKEN_LIST_BEGIN: usize = 0x10;
+const BROKEN_LIST_END: usize = 0x18;
+
+fn broken_part_ids(instance: usize) -> Vec<u32> {
+    let Some(base) = super::rtti::base_offset(instance, "ExEmBreakPartsInfo") else {
+        return Vec::new();
+    };
+    let at = instance + base;
+    let (Some(begin), Some(end)) = (
+        read_process_value::<usize>((at + BROKEN_LIST_BEGIN) as *const usize),
+        read_process_value::<usize>((at + BROKEN_LIST_END) as *const usize),
+    ) else {
+        return Vec::new();
+    };
+    if begin == 0 || end < begin {
+        return Vec::new();
+    }
+    let count = ((end - begin) / 4).min(MAX_PARTS);
+    (0..count)
+        .filter_map(|i| read_process_value::<u32>((begin + i * 4) as *const u32))
+        .collect()
+}
+
+/// The parts to show: their break values where those are known, otherwise the parts the game
+/// lists as broken (shown as broken, without a value).
+fn current_parts(instance: usize, offsets: &[usize], previous: &[PartState]) -> Vec<PartState> {
+    if !offsets.is_empty() {
+        return read_parts(instance, offsets, previous);
+    }
+    broken_part_ids(instance)
+        .into_iter()
+        .map(|id| PartState {
+            id,
+            durability: 0.0,
+            max_durability: 0.0,
+        })
+        .collect()
+}
+
 /// Current state of each part; `previous` keeps the highest break value seen per part.
 fn read_parts(instance: usize, offsets: &[usize], previous: &[PartState]) -> Vec<PartState> {
     offsets
@@ -213,12 +257,13 @@ pub fn observe(instance: usize, type_hash: u32) -> Option<PartBreak> {
         entry.last_hit = now;
         entry.last_seen = now;
         let before = std::mem::take(&mut entry.parts);
-        entry.parts = read_parts(instance, &entry.part_offsets, &before);
+        entry.parts = current_parts(instance, &entry.part_offsets, &before);
+        // Newly broken: broken now, and not already broken before this hit.
         let broke = entry.parts.iter().find(|after| {
             after.broken()
-                && before
+                && !before
                     .iter()
-                    .any(|part| part.id == after.id && !part.broken())
+                    .any(|part| part.id == after.id && part.broken())
         });
         if let Some(part) = broke {
             info!("Enemy {type_hash:#x}: part {:#x} broke", part.id);
@@ -246,7 +291,7 @@ fn track(
     }
     let class = class_number(instance);
     let part_offsets = class.map_or_else(Vec::new, |class| find_parts(instance, class));
-    let parts = read_parts(instance, &part_offsets, &[]);
+    let parts = current_parts(instance, &part_offsets, &[]);
     info!(
         "Enemy {type_hash:#x} (class {}): {} part record(s) {}",
         class.map_or("?".into(), |class| format!("Em{class:04X}")),
@@ -349,7 +394,7 @@ pub fn snapshot() -> Vec<EnemyHp> {
         }
         entry.hp = hp;
         let previous = std::mem::take(&mut entry.parts);
-        entry.parts = read_parts(entry.instance, &entry.part_offsets, &previous);
+        entry.parts = current_parts(entry.instance, &entry.part_offsets, &previous);
         if hp == 0 {
             let defeated_at = *entry.defeated_at.get_or_insert(now);
             return now.duration_since(defeated_at) < DEFEATED_LINGER;

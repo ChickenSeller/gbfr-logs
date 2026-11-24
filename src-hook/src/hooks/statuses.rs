@@ -31,7 +31,8 @@ const STATUS_VECTOR_END: usize = 0x20;
 const MAX_STATUSES: usize = 128;
 
 /// `StatusBase` fields.
-const STATUS_TYPE_OFFSET: usize = 0x40;
+/// The status id (`StatusDef::Types`): +0x50 on 2.0.2 (was +0x40).
+const STATUS_TYPE_OFFSET: usize = 0x50;
 /// Entity handle of whoever applied the status: index, entity pointer, generation.
 const STATUS_SOURCE_ENTITY_OFFSET: usize = 0x30;
 /// `entity + 0x70` is the actor instance, as in damage events.

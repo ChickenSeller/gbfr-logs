@@ -163,7 +163,7 @@ fn draw_enemy(ui: &Ui, config: &EnemyHpConfig, enemy: &EnemyHp, name: Option<&st
 
 /// The breakable part under the HP bar: a thinner bar with its durability, or "broken".
 fn draw_part(ui: &Ui, config: &EnemyHpConfig, width: f32, part: &PartState, number: Option<usize>) {
-    // The value is drained by stun damage to the part, so it is shown as a break value.
+    // The game's own break value: drained by damage to the part, the part breaks at zero.
     let name = match number {
         Some(number) => format!("部位{number} 破坏值"),
         None => "部位破坏值".to_string(),

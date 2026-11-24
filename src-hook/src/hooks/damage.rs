@@ -213,6 +213,10 @@ impl OnProcessDamageHook {
         if let Some((enemy_type, part_id)) =
             super::enemy_hp::observe(target_specified_instance_ptr, target_type_id)
         {
+            super::timeline::record(
+                "part_broken",
+                serde_json::json!({ "enemy": format!("{enemy_type:08x}"), "part": part_id }),
+            );
             let _ = self.tx.send(Message::PartBroken(protocol::PartBrokenEvent {
                 enemy_type,
                 part_id,

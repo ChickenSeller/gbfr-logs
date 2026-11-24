@@ -83,11 +83,41 @@ fn read(address: usize, len: usize) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// The regions watched for a boss: its object and its hurtbox records.
+/// Objects the boss points at whose class names parts (`cDmgParts`, `ExEmBreakParts`,
+/// `ExPartsCtrl`, ...): where a boss without a break value in its own object may keep one.
+const PART_OBJECTS: usize = 8;
+const PART_OBJECT_BYTES: usize = 0x400;
+
+fn part_objects(instance: usize) -> Vec<usize> {
+    let Some(bytes) = read(instance, OBJECT_BYTES) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for offset in (0..OBJECT_BYTES).step_by(8) {
+        let pointer = usize::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
+        // Its own sub-objects are in the object region already.
+        if (instance..instance + OBJECT_BYTES).contains(&pointer) || found.contains(&pointer) {
+            continue;
+        }
+        if super::timeline::object_class(pointer).is_some_and(|class| class.contains("Parts")) {
+            found.push(pointer);
+            if found.len() >= PART_OBJECTS {
+                break;
+            }
+        }
+    }
+    found
+}
+
+/// The regions watched for a boss: its object, its hurtbox records and part objects it points
+/// at.
 fn regions(instance: usize) -> Vec<(&'static str, usize, usize)> {
     let mut regions = vec![("object", instance, OBJECT_BYTES)];
     if let Some((records, bytes)) = super::hurtboxes::records_region(instance) {
         regions.push(("hurtboxes", records, bytes.min(MAX_HURTBOX_BYTES)));
+    }
+    for pointer in part_objects(instance) {
+        regions.push(("parts", pointer, PART_OBJECT_BYTES));
     }
     regions
 }

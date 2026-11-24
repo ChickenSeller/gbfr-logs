@@ -244,13 +244,11 @@ impl OnLoadPlayerIdentityHook {
             return;
         }
 
-        info!(
-            "Player identity cached: key={player_key:#010x}, party={}, online={}, name={}",
+        let (party_index, is_online, name) = (
             identity.party_index,
             identity.is_online,
-            identity.display_name.to_string_lossy()
+            identity.display_name.to_string_lossy().into_owned(),
         );
-
         let mapping_changed = {
             let mut identities = IDENTITIES
                 .get_or_init(|| Mutex::new(IdentityStore::default()))
@@ -258,6 +256,12 @@ impl OnLoadPlayerIdentityHook {
                 .expect("player identity map lock poisoned");
             identities.insert(player_key, identity)
         };
+        // The game refreshes identities all the time; only changes are worth a line.
+        if mapping_changed {
+            info!(
+                "Player identity cached: key={player_key:#010x}, party={party_index}, online={is_online}, name={name}"
+            );
+        }
 
         // Actor allocations can be reused while a lobby is changing from its
         // offline placeholders to the real online party. Force the next hit to
@@ -323,17 +327,18 @@ pub fn identity_events_for_actor(
     }
 
     if let Some(identity) = read_actor_identity(actor) {
-        info!(
-            "Player actor matched directly: actor={actor_address:#x}, actor_index={actor_index}, type={character_type:#010x}, party={}, snapshot_offset={ACTOR_IDENTITY_SNAPSHOT_OFFSET:#x}, name={}",
-            identity.party_index,
-            identity.display_name.to_string_lossy()
-        );
-
-        ACTOR_IDENTITIES
+        let previous = ACTOR_IDENTITIES
             .get_or_init(|| Mutex::new(HashMap::new()))
             .lock()
             .expect("actor identity cache lock poisoned")
             .insert(actor_address, identity.clone());
+        if previous.as_ref() != Some(&identity) {
+            info!(
+                "Player actor matched directly: actor={actor_address:#x}, actor_index={actor_index}, type={character_type:#010x}, party={}, snapshot_offset={ACTOR_IDENTITY_SNAPSHOT_OFFSET:#x}, name={}",
+                identity.party_index,
+                identity.display_name.to_string_lossy()
+            );
+        }
 
         return changed_identity_event(actor_address, identity, character_type, actor_index);
     }
