@@ -97,7 +97,7 @@
   },
   "2bd7220b": {
     "key": "WE7701",
-    "text": "Schwert des Verstoßes"
+    "text": "Schwert der absoluten Verleugnung"
   },
   "2c800d3a": {
     "key": "WE7000",
@@ -201,7 +201,7 @@
   },
   "635fffb6": {
     "key": "WE7702",
-    "text": "Schwert des Verzichts"
+    "text": "Schwert der ewigen Verweigerung"
   },
   "6409b2a8": {
     "key": "EM1900",
@@ -469,7 +469,7 @@
   },
   "d4950d74": {
     "key": "WE7700",
-    "text": "Schwert der Widerlegung"
+    "text": "Schwert der vollständigen Widerlegung"
   },
   "d4eebb52": {
     "key": "EM7531",
@@ -594,5 +594,121 @@
   "d7ba6d4a": {
     "key": "EM8300",
     "text": "World"
+  },
+  "effc3497": {
+    "key": "EM0010",
+    "text": "Windfuß-Goblin"
+  },
+  "073ad302": {
+    "key": "EM0012",
+    "text": "Wächter-Goblin"
+  },
+  "0014a1b8": {
+    "key": "EM0013",
+    "text": "Bogenträger-Goblin"
+  },
+  "1f3323c0": {
+    "key": "EM0014",
+    "text": "Azurhäuptling"
+  },
+  "62d7c859": {
+    "key": "EM0015",
+    "text": "Löwenklaue"
+  },
+  "43cf4540": {
+    "key": "EM0104",
+    "text": "Reuevolle Knochen"
+  },
+  "61325867": {
+    "key": "EM0610",
+    "text": "Himmlisches Schleimchen"
+  },
+  "03ec1106": {
+    "key": "EM1006",
+    "text": "Avia-Kreuzritter"
+  },
+  "e4138080": {
+    "key": "EM1101",
+    "text": "Trulen"
+  },
+  "2b755d1c": {
+    "key": "EM1102",
+    "text": "Lamarasona"
+  },
+  "2c0acbe3": {
+    "key": "EM1103",
+    "text": "Geheimnisvoller Schwertkämpfer"
+  },
+  "f38ad679": {
+    "key": "EM1501",
+    "text": "Aquila-Rubinpuppe"
+  },
+  "3f6f3fef": {
+    "key": "EM1510",
+    "text": "Labyrinth-Stein"
+  },
+  "85412de1": {
+    "key": "EM2510",
+    "text": "Sumo-Krabbe"
+  },
+  "ca4964ab": {
+    "key": "EM8400",
+    "text": "Omnis Zegalith"
+  },
+  "0ed6a142": {
+    "key": "EM8401",
+    "text": "Logos Echo"
+  },
+  "d316a5bd": {
+    "key": "WE8450",
+    "text": "Rote Fügung"
+  },
+  "c222c939": {
+    "key": "WE8451",
+    "text": "Blaue Fügung"
+  },
+  "9e3c5762": {
+    "key": "WE8452",
+    "text": "Goldene Fügung"
+  },
+  "08c5ecc7": {
+    "key": "WE8453",
+    "text": "Grüne Fügung"
+  },
+  "498e8418": {
+    "key": "WE8454",
+    "text": "Weiße Fügung"
+  },
+  "da984d5f": {
+    "key": "WE8455",
+    "text": "Schwarze Fügung"
+  },
+  "c90aa636": {
+    "key": "EM8500",
+    "text": "Albacore"
+  },
+  "2f5f3e49": {
+    "key": "EM8510",
+    "text": "Aces High"
+  },
+  "c4d2bb4b": {
+    "key": "EM0803",
+    "text": "Wind Gyre"
+  },
+  "97dfa1f2": {
+    "key": "EM0901",
+    "text": "Water Effigy"
+  },
+  "e93faca2": {
+    "key": "EM0903",
+    "text": "Wind Effigy"
+  },
+  "9338abc9": {
+    "key": "EM1200",
+    "text": "Vaza'ite Raptor"
+  },
+  "58a85756": {
+    "key": "EM1300",
+    "text": "Droita Sentinel"
   }
 }

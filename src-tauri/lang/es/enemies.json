@@ -97,7 +97,7 @@
   },
   "2bd7220b": {
     "key": "WE7701",
-    "text": "Espada de repudio"
+    "text": "Espada de la negación absoluta"
   },
   "2c800d3a": {
     "key": "WE7000",
@@ -201,7 +201,7 @@
   },
   "635fffb6": {
     "key": "WE7702",
-    "text": "Espada de renuncia"
+    "text": "Espada del rechazo eterno"
   },
   "6409b2a8": {
     "key": "EM1900",
@@ -357,7 +357,7 @@
   },
   "a86498c5": {
     "key": "EM7610",
-    "text": "Bahamut Alterum Omega"
+    "text": "Mega-Bahamut Alterum"
   },
   "ad9c4174": {
     "key": "EM7505",
@@ -469,7 +469,7 @@
   },
   "d4950d74": {
     "key": "WE7700",
-    "text": "Espada de refutación"
+    "text": "Espada del repudio total"
   },
   "d4eebb52": {
     "key": "EM7531",
@@ -521,7 +521,7 @@
   },
   "e57a72bc": {
     "key": "WE2111",
-    "text": "Mjolnir"
+    "text": "Mjölnir"
   },
   "e7576708": {
     "key": "EM7500",
@@ -581,11 +581,11 @@
   },
   "3f4b75d5": {
     "key": "EM8000",
-    "text": "Seofón"
+    "text": "Siete"
   },
   "4040b8cd": {
     "key": "EM8100",
-    "text": "Tueyen"
+    "text": "Song"
   },
   "66a3b7f4": {
     "key": "EM8200",
@@ -594,5 +594,121 @@
   "d7ba6d4a": {
     "key": "EM8300",
     "text": "Mundo"
+  },
+  "effc3497": {
+    "key": "EM0010",
+    "text": "Diablillo raso"
+  },
+  "073ad302": {
+    "key": "EM0012",
+    "text": "Diablillo protector"
+  },
+  "0014a1b8": {
+    "key": "EM0013",
+    "text": "Diablillo arquero"
+  },
+  "1f3323c0": {
+    "key": "EM0014",
+    "text": "Cabecilla azul"
+  },
+  "62d7c859": {
+    "key": "EM0015",
+    "text": "Lacayo agreste"
+  },
+  "43cf4540": {
+    "key": "EM0104",
+    "text": "Rencor óseo"
+  },
+  "61325867": {
+    "key": "EM0610",
+    "text": "Viscosín celestial"
+  },
+  "03ec1106": {
+    "key": "EM1006",
+    "text": "Cruzado de Avia"
+  },
+  "e4138080": {
+    "key": "EM1101",
+    "text": "Trulen"
+  },
+  "2b755d1c": {
+    "key": "EM1102",
+    "text": "Lamarasona"
+  },
+  "2c0acbe3": {
+    "key": "EM1103",
+    "text": "Espadachín misterioso"
+  },
+  "f38ad679": {
+    "key": "EM1501",
+    "text": "Gólem rubí Aquila"
+  },
+  "3f6f3fef": {
+    "key": "EM1510",
+    "text": "Roca laberíntica"
+  },
+  "85412de1": {
+    "key": "EM2510",
+    "text": "Cangrejo luchador de sumo"
+  },
+  "ca4964ab": {
+    "key": "EM8400",
+    "text": "Omnis Zegalithos"
+  },
+  "0ed6a142": {
+    "key": "EM8401",
+    "text": "Echo Logi"
+  },
+  "d316a5bd": {
+    "key": "WE8450",
+    "text": "Orden cinabrio"
+  },
+  "c222c939": {
+    "key": "WE8451",
+    "text": "Orden cerúleo"
+  },
+  "9e3c5762": {
+    "key": "WE8452",
+    "text": "Orden dorado"
+  },
+  "08c5ecc7": {
+    "key": "WE8453",
+    "text": "Orden viridián"
+  },
+  "498e8418": {
+    "key": "WE8454",
+    "text": "Orden albo"
+  },
+  "da984d5f": {
+    "key": "WE8455",
+    "text": "Orden azabache"
+  },
+  "c90aa636": {
+    "key": "EM8500",
+    "text": "Albacora"
+  },
+  "2f5f3e49": {
+    "key": "EM8510",
+    "text": "As de la altura"
+  },
+  "c4d2bb4b": {
+    "key": "EM0803",
+    "text": "Wind Gyre"
+  },
+  "97dfa1f2": {
+    "key": "EM0901",
+    "text": "Water Effigy"
+  },
+  "e93faca2": {
+    "key": "EM0903",
+    "text": "Wind Effigy"
+  },
+  "9338abc9": {
+    "key": "EM1200",
+    "text": "Vaza'ite Raptor"
+  },
+  "58a85756": {
+    "key": "EM1300",
+    "text": "Droita Sentinel"
   }
 }

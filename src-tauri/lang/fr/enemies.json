@@ -97,7 +97,7 @@
   },
   "2bd7220b": {
     "key": "WE7701",
-    "text": "Épée de répudiation"
+    "text": "Épée de négation absolue"
   },
   "2c800d3a": {
     "key": "WE7000",
@@ -201,7 +201,7 @@
   },
   "635fffb6": {
     "key": "WE7702",
-    "text": "Épée de renonciation"
+    "text": "Épée de rejet éternel"
   },
   "6409b2a8": {
     "key": "EM1900",
@@ -237,7 +237,7 @@
   },
   "703b6906": {
     "key": "WE2113",
-    "text": "Gáe Bolga"
+    "text": "Gae Bolga"
   },
   "7044a13d": {
     "key": "WE3100",
@@ -273,7 +273,7 @@
   },
   "84fdd7b5": {
     "key": "EM0005",
-    "text": "Guerrier goblin"
+    "text": "Guerrier gobelin"
   },
   "8b964be7": {
     "key": "EM2800",
@@ -437,7 +437,7 @@
   },
   "bcef1ee2": {
     "key": "EM1100",
-    "text": "Conf. du Voile de l'épée"
+    "text": "Confrérie du Voile de l'épée"
   },
   "bdc484a5": {
     "key": "EM1303",
@@ -469,7 +469,7 @@
   },
   "d4950d74": {
     "key": "WE7700",
-    "text": "Épée de réfutation"
+    "text": "Épée de refus total"
   },
   "d4eebb52": {
     "key": "EM7531",
@@ -521,7 +521,7 @@
   },
   "e57a72bc": {
     "key": "WE2111",
-    "text": "Mjöllnir"
+    "text": "Mjolnir"
   },
   "e7576708": {
     "key": "EM7500",
@@ -594,5 +594,121 @@
   "d7ba6d4a": {
     "key": "EM8300",
     "text": "Le Monde"
+  },
+  "effc3497": {
+    "key": "EM0010",
+    "text": "Gobelin fantassin"
+  },
+  "073ad302": {
+    "key": "EM0012",
+    "text": "Gobelin sentinelle"
+  },
+  "0014a1b8": {
+    "key": "EM0013",
+    "text": "Gobelin archer"
+  },
+  "1f3323c0": {
+    "key": "EM0014",
+    "text": "Chef d'azur"
+  },
+  "62d7c859": {
+    "key": "EM0015",
+    "text": "Lion sauvage"
+  },
+  "43cf4540": {
+    "key": "EM0104",
+    "text": "Os du remords"
+  },
+  "61325867": {
+    "key": "EM0610",
+    "text": "Poisseux céleste"
+  },
+  "03ec1106": {
+    "key": "EM1006",
+    "text": "Croisé d'Avia"
+  },
+  "e4138080": {
+    "key": "EM1101",
+    "text": "Trulen"
+  },
+  "2b755d1c": {
+    "key": "EM1102",
+    "text": "Lamarasona"
+  },
+  "2c0acbe3": {
+    "key": "EM1103",
+    "text": "Épéiste mystérieux"
+  },
+  "f38ad679": {
+    "key": "EM1501",
+    "text": "Poupée rubis Aquila"
+  },
+  "3f6f3fef": {
+    "key": "EM1510",
+    "text": "Roche labyrinthique"
+  },
+  "85412de1": {
+    "key": "EM2510",
+    "text": "Crabe sumo combatif"
+  },
+  "ca4964ab": {
+    "key": "EM8400",
+    "text": "Omnis Zegalith"
+  },
+  "0ed6a142": {
+    "key": "EM8401",
+    "text": "Écho Logos"
+  },
+  "d316a5bd": {
+    "key": "WE8450",
+    "text": "Providence du Vermillon"
+  },
+  "c222c939": {
+    "key": "WE8451",
+    "text": "Providence de l'Azur"
+  },
+  "9e3c5762": {
+    "key": "WE8452",
+    "text": "Providence de l'Or"
+  },
+  "08c5ecc7": {
+    "key": "WE8453",
+    "text": "Providence de l'Émeraude"
+  },
+  "498e8418": {
+    "key": "WE8454",
+    "text": "Providence de la Lumière"
+  },
+  "da984d5f": {
+    "key": "WE8455",
+    "text": "Providence des Ténèbres"
+  },
+  "c90aa636": {
+    "key": "EM8500",
+    "text": "Albacore"
+  },
+  "2f5f3e49": {
+    "key": "EM8510",
+    "text": "Aces High"
+  },
+  "c4d2bb4b": {
+    "key": "EM0803",
+    "text": "Wind Gyre"
+  },
+  "97dfa1f2": {
+    "key": "EM0901",
+    "text": "Water Effigy"
+  },
+  "e93faca2": {
+    "key": "EM0903",
+    "text": "Wind Effigy"
+  },
+  "9338abc9": {
+    "key": "EM1200",
+    "text": "Vaza'ite Raptor"
+  },
+  "58a85756": {
+    "key": "EM1300",
+    "text": "Droita Sentinel"
   }
 }

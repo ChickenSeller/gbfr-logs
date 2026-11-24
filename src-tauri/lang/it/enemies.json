@@ -594,5 +594,121 @@
   "d7ba6d4a": {
     "key": "EM8300",
     "text": "Il Mondo"
+  },
+  "effc3497": {
+    "key": "EM0010",
+    "text": "Oni gambalesta"
+  },
+  "073ad302": {
+    "key": "EM0012",
+    "text": "Oni difensore"
+  },
+  "0014a1b8": {
+    "key": "EM0013",
+    "text": "Oni arciere"
+  },
+  "1f3323c0": {
+    "key": "EM0014",
+    "text": "Canaglia blu"
+  },
+  "62d7c859": {
+    "key": "EM0015",
+    "text": "Mascalzone"
+  },
+  "43cf4540": {
+    "key": "EM0104",
+    "text": "Ossa contrite"
+  },
+  "61325867": {
+    "key": "EM0610",
+    "text": "Melma celestiale"
+  },
+  "03ec1106": {
+    "key": "EM1006",
+    "text": "Crociato di Avia"
+  },
+  "e4138080": {
+    "key": "EM1101",
+    "text": "Trulen"
+  },
+  "2b755d1c": {
+    "key": "EM1102",
+    "text": "Ramlahsona"
+  },
+  "2c0acbe3": {
+    "key": "EM1103",
+    "text": "Spadaccino misterioso"
+  },
+  "f38ad679": {
+    "key": "EM1501",
+    "text": "Golem di rubini Aquila"
+  },
+  "3f6f3fef": {
+    "key": "EM1510",
+    "text": "Pietra del labirinto"
+  },
+  "85412de1": {
+    "key": "EM2510",
+    "text": "Granchio del sumo"
+  },
+  "ca4964ab": {
+    "key": "EM8400",
+    "text": "Omnis Zegalith"
+  },
+  "0ed6a142": {
+    "key": "EM8401",
+    "text": "Echo logi"
+  },
+  "d316a5bd": {
+    "key": "WE8450",
+    "text": "Provvidenza scarlatta"
+  },
+  "c222c939": {
+    "key": "WE8451",
+    "text": "Provvidenza cerulea"
+  },
+  "9e3c5762": {
+    "key": "WE8452",
+    "text": "Provvidenza dorata"
+  },
+  "08c5ecc7": {
+    "key": "WE8453",
+    "text": "Provvidenza smeraldina"
+  },
+  "498e8418": {
+    "key": "WE8454",
+    "text": "Provvidenza nivea"
+  },
+  "da984d5f": {
+    "key": "WE8455",
+    "text": "Provvidenza oscura"
+  },
+  "c90aa636": {
+    "key": "EM8500",
+    "text": "Alalunga"
+  },
+  "2f5f3e49": {
+    "key": "EM8510",
+    "text": "Aces High"
+  },
+  "c4d2bb4b": {
+    "key": "EM0803",
+    "text": "Wind Gyre"
+  },
+  "97dfa1f2": {
+    "key": "EM0901",
+    "text": "Water Effigy"
+  },
+  "e93faca2": {
+    "key": "EM0903",
+    "text": "Wind Effigy"
+  },
+  "9338abc9": {
+    "key": "EM1200",
+    "text": "Vaza'ite Raptor"
+  },
+  "58a85756": {
+    "key": "EM1300",
+    "text": "Droita Sentinel"
   }
 }

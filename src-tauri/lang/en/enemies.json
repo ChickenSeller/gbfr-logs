@@ -618,5 +618,97 @@
   "ca4964ab": {
     "key": "EM8400",
     "text": "Omnis Zegalith"
+  },
+  "effc3497": {
+    "key": "EM0010",
+    "text": "Fiend Clan Grunt"
+  },
+  "073ad302": {
+    "key": "EM0012",
+    "text": "Fiend Clan Gatekeeper"
+  },
+  "0014a1b8": {
+    "key": "EM0013",
+    "text": "Fiend Clan Yumi"
+  },
+  "1f3323c0": {
+    "key": "EM0014",
+    "text": "Cruel Overseer"
+  },
+  "62d7c859": {
+    "key": "EM0015",
+    "text": "Storm-Mane Gatekeeper"
+  },
+  "43cf4540": {
+    "key": "EM0104",
+    "text": "Feudal Grudge"
+  },
+  "61325867": {
+    "key": "EM0610",
+    "text": "Celestial Slime"
+  },
+  "03ec1106": {
+    "key": "EM1006",
+    "text": "Aviaeth Crusader"
+  },
+  "e4138080": {
+    "key": "EM1101",
+    "text": "Trulen"
+  },
+  "2b755d1c": {
+    "key": "EM1102",
+    "text": "Ramlahsona"
+  },
+  "2c0acbe3": {
+    "key": "EM1103",
+    "text": "Mysterious Swordsman"
+  },
+  "f38ad679": {
+    "key": "EM1501",
+    "text": "Aquila Ruby Golem"
+  },
+  "3f6f3fef": {
+    "key": "EM1510",
+    "text": "Fool's Golem"
+  },
+  "85412de1": {
+    "key": "EM2510",
+    "text": "Fan-Fave Sumo Pincer"
+  },
+  "0ed6a142": {
+    "key": "EM8401",
+    "text": "Logos Echo"
+  },
+  "d316a5bd": {
+    "key": "WE8450",
+    "text": "Law of Vermillion"
+  },
+  "c222c939": {
+    "key": "WE8451",
+    "text": "Law of Azure"
+  },
+  "9e3c5762": {
+    "key": "WE8452",
+    "text": "Law of Gold"
+  },
+  "08c5ecc7": {
+    "key": "WE8453",
+    "text": "Law of Emerald"
+  },
+  "498e8418": {
+    "key": "WE8454",
+    "text": "Law of White"
+  },
+  "da984d5f": {
+    "key": "WE8455",
+    "text": "Law of Black"
+  },
+  "c90aa636": {
+    "key": "EM8500",
+    "text": "Albacore"
+  },
+  "2f5f3e49": {
+    "key": "EM8510",
+    "text": "Aces High"
   }
 }
