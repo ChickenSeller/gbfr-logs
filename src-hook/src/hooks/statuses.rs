@@ -239,14 +239,17 @@ fn poll(tx: &event::Tx) {
             continue;
         };
         let actor = &mut actors[index];
+        let action = super::actions::current(actor.instance);
         for (id, status) in &actor.active {
             if !current.contains_key(id) {
                 let _ = tx.send(Message::StatusRemoved(status.clone()));
+                super::timeline::record("status-", timeline_status(status, &action));
             }
         }
         for (id, status) in &current {
             if !actor.active.contains_key(id) {
                 let _ = tx.send(Message::StatusApplied(status.clone()));
+                super::timeline::record("status+", timeline_status(status, &action));
             }
         }
         actor.active = current;
@@ -254,6 +257,63 @@ fn poll(tx: &event::Tx) {
     for index in gone.into_iter().rev() {
         actors.remove(index);
     }
+}
+
+/// A status change for the diagnostics timeline, with the action the member was in.
+fn timeline_status(status: &StatusEvent, action: &Option<(u32, String)>) -> serde_json::Value {
+    // The first time a class shows up, its object's words too: to find where it keeps its id.
+    static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    let words = {
+        let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        let address = status.status_id as usize;
+        if address % 2 == 0 && !seen.contains(&status.class_name) {
+            seen.push(status.class_name.clone());
+            Some(object_words(address, 0x100))
+        } else {
+            None
+        }
+    };
+    serde_json::json!({
+        "words": words,
+        "actor": status.actor_index,
+        "class": status.class_name,
+        "id": format!("{:#x}", status.status_id),
+        "source": status.source_type.map(|s| format!("{s:08x}")),
+        "action": action.as_ref().map(|(number, name)| format!("{number:#x} {name}")),
+    })
+}
+
+/// The non-zero u32 words of the first `len` bytes at `address`, as `offset:value`.
+fn object_words(address: usize, len: usize) -> Vec<String> {
+    (0..len / 4)
+        .filter_map(|i| {
+            let value = read_process_value::<u32>((address + i * 4) as *const u32)?;
+            (value != 0).then(|| format!("{:x}:{value:08x}", i * 4))
+        })
+        .collect()
+}
+
+/// The status objects on every tracked party member, their first `STATUS_DUMP` bytes as u32
+/// words (non-zero only), for the diagnostics export: to find where a status keeps its id.
+pub fn status_objects() -> serde_json::Value {
+    const STATUS_DUMP: usize = 0x100;
+    let actors = ACTORS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut out = Vec::new();
+    for actor in actors.iter() {
+        for (id, status) in &actor.active {
+            // Odd keys are the synthetic grab, not an object.
+            if id % 2 != 0 {
+                continue;
+            }
+            let words = object_words(*id, STATUS_DUMP);
+            out.push(serde_json::json!({
+                "actor": actor.actor_index,
+                "class": status.class_name,
+                "words": words,
+            }));
+        }
+    }
+    serde_json::Value::Array(out)
 }
 
 /// The actor that last acted for each party member, e.g. Id's dragon form instead of Id.
@@ -365,9 +425,6 @@ fn log_action_changes() {
     const MAX_LINES: usize = 600;
     static LAST: Mutex<Vec<(usize, u32)>> = Mutex::new(Vec::new());
     static LINES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    if LINES.load(std::sync::atomic::Ordering::Relaxed) >= MAX_LINES {
-        return;
-    }
     let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
     for (index, instance) in party_instances() {
         let Some((action, name)) = super::actions::current(instance) else {
@@ -377,6 +434,13 @@ fn log_action_changes() {
             Some((_, previous)) if *previous == action => continue,
             Some((_, previous)) => *previous = action,
             None => last.push((instance, action)),
+        }
+        super::timeline::record(
+            "action",
+            serde_json::json!({ "actor": index, "action": format!("{action:#x}"), "name": name }),
+        );
+        if LINES.load(std::sync::atomic::Ordering::Relaxed) >= MAX_LINES {
+            continue;
         }
         LINES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let grabbed = if super::actions::is_grabbed(&name) {

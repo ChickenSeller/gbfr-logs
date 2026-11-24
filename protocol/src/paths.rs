@@ -12,6 +12,8 @@ pub const DATA_DIR_NAME: &str = "gbfr-logs-kaguya";
 pub const HOOK_LOG_FILE: &str = "gbfr-logs-kaguya.txt";
 /// Folder in the data folder where the hook records bosses' memory over a fight.
 pub const BOSS_TRACE_DIR: &str = "boss-traces";
+/// Folder in the data folder where the hook writes its diagnostics timeline, one file per session.
+pub const TIMELINE_DIR: &str = "timelines";
 
 const LEGACY_DATA_DIR_NAME: &str = "gbfr-logs-awa";
 const LEGACY_HOOK_LOG_FILE: &str = "gbfr-logs-awa.txt";

@@ -35,6 +35,7 @@ pub mod rtti;
 mod sba;
 pub mod statuses;
 pub mod terrain;
+pub mod timeline;
 
 type GetEntityHashID0x58 = unsafe extern "system" fn(*const usize, *const u32) -> *const usize;
 
@@ -95,6 +96,7 @@ pub fn setup_hooks(tx: event::Tx) -> Result<()> {
         }
     }
 
+    timeline::setup(process.base_address);
     statuses::setup(process.base_address, tx.clone());
     boss_trace::setup();
 

@@ -108,14 +108,20 @@ fn write_zip(app_version: &str, probe: &serde_json::Value) -> Result<PathBuf> {
         if let Ok(settings) = std::fs::read(data.join("overlay.json")) {
             add("overlay.json", &settings)?;
         }
-        // The hook's recordings of bosses' memory over recent fights.
-        if let Ok(entries) = std::fs::read_dir(data.join(protocol::paths::BOSS_TRACE_DIR)) {
-            for entry in entries.flatten() {
-                if let Ok(trace) = std::fs::read(entry.path()) {
-                    add(
-                        &format!("boss-traces/{}", entry.file_name().to_string_lossy()),
-                        &trace,
-                    )?;
+        // The hook's recordings of bosses' memory over recent fights, and its timelines of
+        // recent sessions (actions, statuses, hits, enemy behaviour).
+        for (folder, name) in [
+            (protocol::paths::BOSS_TRACE_DIR, "boss-traces"),
+            (protocol::paths::TIMELINE_DIR, "timelines"),
+        ] {
+            if let Ok(entries) = std::fs::read_dir(data.join(folder)) {
+                for entry in entries.flatten() {
+                    if let Ok(bytes) = std::fs::read(entry.path()) {
+                        add(
+                            &format!("{name}/{}", entry.file_name().to_string_lossy()),
+                            &bytes,
+                        )?;
+                    }
                 }
             }
         }

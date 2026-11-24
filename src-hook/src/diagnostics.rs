@@ -66,6 +66,8 @@ fn report() -> Value {
         "party_actions": party_actions(),
         "party_loadouts": party_loadouts(),
         "terrain": terrain(),
+        "status_objects": crate::hooks::statuses::status_objects(),
+        "timeline": crate::hooks::timeline::report(),
     })
 }
 

@@ -228,6 +228,20 @@ impl OnProcessDamageHook {
         }
         if super::enemy_hp::is_player_type(target_type_id) {
             super::statuses::track(target_specified_instance_ptr, target_idx, target_type_id);
+            if !super::enemy_hp::is_player_type(source_parent_type_id) {
+                // For the diagnostics timeline: which enemy object hit whom, and how hard.
+                super::timeline::record(
+                    "hit",
+                    serde_json::json!({
+                        "target": target_idx,
+                        "source": format!("{source_parent_type_id:08x}"),
+                        "by": format!("{source_type_id:08x}"),
+                        "by_class": super::rtti::class_name(source_specified_instance_ptr),
+                        "damage": damage,
+                        "action": format!("{action_type:?}"),
+                    }),
+                );
+            }
         }
         let stun_value =
             stun_value_for_event(&action_type, previous_stun_value, current_stun_value);
