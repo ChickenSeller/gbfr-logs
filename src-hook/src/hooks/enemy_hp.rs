@@ -61,9 +61,12 @@ pub struct EnemyHp {
     pub parts: Vec<PartState>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PartState {
     pub id: u32,
+    /// The game's internal name for the part, where it has one (`ExEmBreakParts` definitions);
+    /// there are no official part names in the game's text.
+    pub name: Option<String>,
     pub durability: f32,
     /// Highest durability seen; the game keeps the starting value elsewhere.
     pub max_durability: f32,
@@ -150,16 +153,174 @@ fn broken_part_ids(instance: usize) -> Vec<u32> {
         .collect()
 }
 
-/// The parts to show: their break values where those are known, otherwise the parts the game
-/// lists as broken (shown as broken, without a value).
-fn current_parts(instance: usize, offsets: &[usize], previous: &[PartState]) -> Vec<PartState> {
+/// The enemy's `ExEmBreakParts`, the generic breakable-parts component (Proto Bahamut uses it).
+/// It is not part of the enemy object: the actor keeps its components in a `std::map` (type
+/// index -> component) at +0xC0, whose head node pointer is at +0xD0; nodes are
+/// `{left, parent, right, colour, is_nil @+25, key @+32, component @+40}`. The type index is
+/// assigned at run time, so the component is found by its class name.
+const COMPONENT_MAP_HEAD: usize = 0xD0;
+const MAX_MAP_NODES: usize = 512;
+
+fn break_parts_component(instance: usize) -> Option<usize> {
+    let head = read_process_value::<usize>((instance + COMPONENT_MAP_HEAD) as *const usize)?;
+    let root = read_process_value::<usize>((head + 8) as *const usize)?;
+    let mut stack = vec![root];
+    let mut visited = 0;
+    while let Some(node) = stack.pop() {
+        if node == 0 || node == head || visited >= MAX_MAP_NODES {
+            continue;
+        }
+        visited += 1;
+        if read_process_value::<u8>((node + 25) as *const u8) != Some(0) {
+            continue;
+        }
+        if let Some(component) = read_process_value::<usize>((node + 40) as *const usize) {
+            if super::timeline::object_class(component).as_deref() == Some("ExEmBreakParts") {
+                return Some(component);
+            }
+        }
+        for link in [0, 16] {
+            if let Some(child) = read_process_value::<usize>((node + link) as *const usize) {
+                stack.push(child);
+            }
+        }
+    }
+    None
+}
+
+/// `ExEmBreakParts` layout (game 2.0.2, from its hit handler, vtable slot 17):
+/// - +0x10/+0x18: a vector of 12-byte part states, `{remaining i32, ? i32, broken u8 @+8}`;
+///   each hit on a part subtracts the hit's value from `remaining` (clamped at 0), and the part
+///   breaks at 0 (then its index is added to `ExEmBreakPartsInfo`'s list);
+/// - +0x28/+0x30: a vector of 56-byte part definitions, `breakable u8 @+8`.
+const PART_STATES: usize = 0x10;
+const PART_STATE_SIZE: usize = 12;
+const PART_DEFINITIONS: usize = 0x28;
+const PART_DEFINITION_SIZE: usize = 56;
+
+/// An MSVC `std::string` (16-byte inline buffer or pointer, then size and capacity) holding a
+/// short printable name.
+fn read_name(at: usize) -> Option<String> {
+    let size = read_process_value::<usize>((at + 16) as *const usize)?;
+    let capacity = read_process_value::<usize>((at + 24) as *const usize)?;
+    if size == 0 || size > 64 || capacity < size {
+        return None;
+    }
+    let text = if capacity >= 16 {
+        read_process_value::<usize>(at as *const usize)?
+    } else {
+        at
+    };
+    let bytes: Vec<u8> = (0..size)
+        .map(|i| read_process_value::<u8>((text + i) as *const u8))
+        .collect::<Option<_>>()?;
+    let name = String::from_utf8(bytes).ok()?;
+    name.chars()
+        .all(|c| c.is_ascii_graphic() || c == ' ')
+        .then_some(name)
+}
+
+/// Where a part definition keeps its name: the same 56-byte layout as the component's hit
+/// effect records, whose string is at +16.
+const PART_DEFINITION_NAME: usize = 16;
+
+fn vector(at: usize, element: usize) -> Option<(usize, usize)> {
+    let begin = read_process_value::<usize>(at as *const usize)?;
+    let end = read_process_value::<usize>((at + 8) as *const usize)?;
+    (begin != 0 && end >= begin).then(|| (begin, ((end - begin) / element).min(MAX_PARTS)))
+}
+
+fn component_parts(component: usize, previous: &[PartState]) -> Vec<PartState> {
+    let Some((states, count)) = vector(component + PART_STATES, PART_STATE_SIZE) else {
+        return Vec::new();
+    };
+    let definitions = vector(component + PART_DEFINITIONS, PART_DEFINITION_SIZE);
+    let mut parts = Vec::new();
+    let mut raw = Vec::new();
+    for index in 0..count {
+        let state = states + index * PART_STATE_SIZE;
+        let (Some(remaining), Some(other), Some(broken)) = (
+            read_process_value::<i32>(state as *const i32),
+            read_process_value::<i32>((state + 4) as *const i32),
+            read_process_value::<u8>((state + 8) as *const u8),
+        ) else {
+            continue;
+        };
+        raw.push(serde_json::json!([index, remaining, other, broken]));
+
+        let name = definitions
+            .filter(|(_, count)| index < *count)
+            .and_then(|(begin, _)| {
+                read_name(begin + index * PART_DEFINITION_SIZE + PART_DEFINITION_NAME)
+            });
+        let breakable = definitions.map_or(true, |(begin, count)| {
+            index >= count
+                || read_process_value::<u8>((begin + index * PART_DEFINITION_SIZE + 8) as *const u8)
+                    .is_some_and(|flag| flag != 0)
+        });
+        if !breakable {
+            continue;
+        }
+        let durability = if broken != 0 {
+            0.0
+        } else {
+            remaining.max(0) as f32
+        };
+        let id = index as u32;
+        let max_durability = previous
+            .iter()
+            .find(|part| part.id == id)
+            .map_or(durability, |part| part.max_durability.max(durability));
+        parts.push(PartState {
+            id,
+            name,
+            durability,
+            max_durability,
+        });
+    }
+    // For the diagnostics timeline: the raw states, whenever a value changes (to confirm what
+    // the second field holds).
+    let changed = parts.len() != previous.len()
+        || parts
+            .iter()
+            .zip(previous)
+            .any(|(now, before)| now.durability != before.durability);
+    if changed {
+        super::timeline::record(
+            "break_parts",
+            serde_json::json!({
+                "component": format!("{component:#x}"),
+                "states": raw,
+                "names": parts.iter().map(|part| (part.id, part.name.clone())).collect::<Vec<_>>(),
+            }),
+        );
+    }
+    parts
+}
+
+/// The parts to show: their break values where those are known (in the enemy object, or in its
+/// `ExEmBreakParts`), otherwise the parts the game lists as broken (shown as broken, without a
+/// value).
+fn current_parts(
+    instance: usize,
+    offsets: &[usize],
+    component: Option<usize>,
+    previous: &[PartState],
+) -> Vec<PartState> {
     if !offsets.is_empty() {
         return read_parts(instance, offsets, previous);
+    }
+    if let Some(component) = component {
+        let parts = component_parts(component, previous);
+        if !parts.is_empty() {
+            return parts;
+        }
     }
     broken_part_ids(instance)
         .into_iter()
         .map(|id| PartState {
             id,
+            name: None,
             durability: 0.0,
             max_durability: 0.0,
         })
@@ -184,6 +345,7 @@ fn read_parts(instance: usize, offsets: &[usize], previous: &[PartState]) -> Vec
                 .map_or(durability, |part| part.max_durability.max(durability));
             Some(PartState {
                 id,
+                name: None,
                 durability: durability.max(0.0),
                 max_durability,
             })
@@ -203,6 +365,9 @@ struct Tracked {
     defeated_at: Option<Instant>,
     /// Offsets of the part ids, found when the enemy is first hit.
     part_offsets: Vec<usize>,
+    /// The enemy's `ExEmBreakParts`, looked up once when it is first tracked (the lookup walks a
+    /// map, too slow for every hit).
+    break_parts: Option<usize>,
     parts: Vec<PartState>,
 }
 
@@ -257,7 +422,7 @@ pub fn observe(instance: usize, type_hash: u32) -> Option<PartBreak> {
         entry.last_hit = now;
         entry.last_seen = now;
         let before = std::mem::take(&mut entry.parts);
-        entry.parts = current_parts(instance, &entry.part_offsets, &before);
+        entry.parts = current_parts(instance, &entry.part_offsets, entry.break_parts, &before);
         // Newly broken: broken now, and not already broken before this hit.
         let broke = entry.parts.iter().find(|after| {
             after.broken()
@@ -291,9 +456,13 @@ fn track(
     }
     let class = class_number(instance);
     let part_offsets = class.map_or_else(Vec::new, |class| find_parts(instance, class));
-    let parts = current_parts(instance, &part_offsets, &[]);
+    let break_parts = part_offsets
+        .is_empty()
+        .then(|| break_parts_component(instance))
+        .flatten();
+    let parts = current_parts(instance, &part_offsets, break_parts, &[]);
     info!(
-        "Enemy {type_hash:#x} (class {}): {} part record(s) {}",
+        "Enemy {type_hash:#x} (class {}): {} part record(s) {}, ExEmBreakParts {}",
         class.map_or("?".into(), |class| format!("Em{class:04X}")),
         parts.len(),
         part_offsets
@@ -301,7 +470,8 @@ fn track(
             .zip(&parts)
             .map(|(offset, part)| format!("+{offset:#x} id {:#x} {:.1}", part.id, part.durability))
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(", "),
+        break_parts.map_or("none".to_string(), |c| format!("{c:#x}"))
     );
     tracked.push(Tracked {
         instance,
@@ -313,6 +483,7 @@ fn track(
         last_seen: now,
         defeated_at: None,
         part_offsets,
+        break_parts,
         parts,
     });
 }
@@ -394,7 +565,12 @@ pub fn snapshot() -> Vec<EnemyHp> {
         }
         entry.hp = hp;
         let previous = std::mem::take(&mut entry.parts);
-        entry.parts = current_parts(entry.instance, &entry.part_offsets, &previous);
+        entry.parts = current_parts(
+            entry.instance,
+            &entry.part_offsets,
+            entry.break_parts,
+            &previous,
+        );
         if hp == 0 {
             let defeated_at = *entry.defeated_at.get_or_insert(now);
             return now.duration_since(defeated_at) < DEFEATED_LINGER;

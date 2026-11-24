@@ -135,9 +135,11 @@ pub fn setup(game_base: usize) {
     crate::shutdown::spawn(|| {
         let mut previous: HashMap<usize, HashMap<String, String>> = HashMap::new();
         let mut damageable: HashMap<usize, (i64, i64)> = HashMap::new();
+        let mut components: HashMap<(usize, &'static str), Vec<u32>> = HashMap::new();
         while crate::shutdown::sleep(ENEMY_INTERVAL) {
             scan_enemies(&mut previous);
             scan_damageable(&mut damageable);
+            scan_party_components(&mut components);
             flush();
         }
         flush();
@@ -255,6 +257,40 @@ fn scan_damageable(previous: &mut HashMap<usize, (i64, i64)>) {
         }
         alive
     });
+}
+
+/// Party members' components that may hold the SBA gauge (game 2.0.2 moved it; it used to be
+/// the f32 at +0x7C of the component the old SBA hook received): their words whenever they
+/// change, as `offset:value` from the component's start.
+const PARTY_COMPONENTS: [(&str, usize); 2] = [("ExPlayerPoint", 0xB0), ("ExSpecialArts", 0x170)];
+
+fn scan_party_components(previous: &mut HashMap<(usize, &'static str), Vec<u32>>) {
+    for (index, instance) in super::statuses::party_instances() {
+        for (name, len) in PARTY_COMPONENTS {
+            let Some(base) = super::rtti::base_offset(instance, name) else {
+                continue;
+            };
+            let words: Vec<u32> = (0..len / 4)
+                .map(|i| {
+                    read_process_value::<u32>((instance + base + i * 4) as *const u32).unwrap_or(0)
+                })
+                .collect();
+            let before = previous.get(&(instance, name));
+            let changes: Vec<String> = words
+                .iter()
+                .enumerate()
+                .filter(|(i, word)| before.map_or(**word != 0, |b| b.get(*i) != Some(*word)))
+                .map(|(i, word)| format!("{:x}:{word:08x}", i * 4))
+                .collect();
+            if !changes.is_empty() {
+                record(
+                    "component",
+                    json!({ "actor": index, "name": name, "base": format!("{base:#x}"), "changes": changes }),
+                );
+            }
+            previous.insert((instance, name), words);
+        }
+    }
 }
 
 fn scan_enemies(previous: &mut HashMap<usize, HashMap<String, String>>) {

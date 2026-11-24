@@ -164,9 +164,15 @@ fn draw_enemy(ui: &Ui, config: &EnemyHpConfig, enemy: &EnemyHp, name: Option<&st
 /// The breakable part under the HP bar: a thinner bar with its durability, or "broken".
 fn draw_part(ui: &Ui, config: &EnemyHpConfig, width: f32, part: &PartState, number: Option<usize>) {
     // The game's own break value: drained by damage to the part, the part breaks at zero.
+    // The game has no names for parts in its text: the internal name where the game keeps one,
+    // otherwise the part's id.
+    let label = part
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("#{:x}", part.id));
     let name = match number {
-        Some(number) => format!("部位{number} 破坏值"),
-        None => "部位破坏值".to_string(),
+        Some(number) => format!("部位{number}（{label}） 破坏值"),
+        None => format!("部位（{label}） 破坏值"),
     };
     let ratio = if part.max_durability > 0.0 {
         (part.durability / part.max_durability).clamp(0.0, 1.0)
