@@ -15,9 +15,9 @@ type OnShowResultScreenFunc = unsafe extern "system" fn(*const usize) -> usize;
 type OnBattleEndFunc = unsafe extern "system" fn(*const usize);
 
 static_detour! {
-    static OnLoadQuestState: unsafe extern "system" fn(*const usize) -> usize;
-    static OnShowResultScreen: unsafe extern "system" fn(*const usize) -> usize;
-    static OnBattleEnd: unsafe extern "system" fn(*const usize);
+    pub(crate) static OnLoadQuestState: unsafe extern "system" fn(*const usize) -> usize;
+    pub(crate) static OnShowResultScreen: unsafe extern "system" fn(*const usize) -> usize;
+    pub(crate) static OnBattleEnd: unsafe extern "system" fn(*const usize);
 }
 
 const ON_LOAD_QUEST_STATE: &str =

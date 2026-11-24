@@ -254,7 +254,7 @@ impl FontBrowser {
     pub fn open() -> Self {
         let slot = Arc::new(Mutex::new(None));
         let result = Arc::clone(&slot);
-        std::thread::spawn(move || {
+        crate::shutdown::spawn(move || {
             let chosen = open_font_dialog();
             *result.lock().unwrap_or_else(|e| e.into_inner()) = Some(chosen);
         });

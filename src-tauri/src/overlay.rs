@@ -139,6 +139,14 @@ impl OverlayFeed {
             .await;
     }
 
+    /// Asks the hook to remove itself from the game, for quitting. Connects even if the last
+    /// attempt was moments ago; does nothing when no hook is listening.
+    pub async fn unload_hook(&self) {
+        let mut connection = self.connection.lock().await;
+        connection.last_attempt = None;
+        connection.send(&OverlayMessage::Unload).await;
+    }
+
     /// Shows or hides one of the in-game windows.
     pub async fn toggle_window(&self, window: protocol::OverlayWindow) {
         self.connection

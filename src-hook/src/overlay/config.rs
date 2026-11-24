@@ -39,9 +39,8 @@ pub struct OverlayConfig {
     pub collapsed_sections: Vec<String>,
     /// Top-left corner of the settings menu; `None` until it has been moved.
     pub menu_position: Option<[f32; 2]>,
-    /// Experimental: marks tracked actors in the 3D scene. Not saved: every start is without it,
-    /// while what it shows (`debug`) is remembered.
-    #[serde(skip)]
+    /// Experimental: marks tracked actors in the 3D scene. Off until the player turns it on;
+    /// remembered from then on, like what it shows (`debug`).
     pub debug_view: bool,
     /// What the debug view draws.
     pub debug: DebugViewConfig,
@@ -338,7 +337,7 @@ pub fn save(config: &OverlayConfig) {
     let Ok(text) = serde_json::to_string_pretty(config) else {
         return;
     };
-    std::thread::spawn(move || {
+    crate::shutdown::spawn(move || {
         let path = dir.join(FILE_NAME);
         let temp = dir.join(format!("{FILE_NAME}.tmp"));
         let result = std::fs::create_dir_all(&dir)
@@ -356,15 +355,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn debug_view_starts_off_every_time() {
+    fn debug_view_is_off_by_default_and_remembered() {
+        assert!(!OverlayConfig::default().debug_view);
+        // Settings saved before it was remembered have no such field.
+        let old: OverlayConfig = serde_json::from_str(r#"{"meter":{"width":500}}"#).unwrap();
+        assert!(!old.debug_view);
         let config = OverlayConfig {
             debug_view: true,
             ..OverlayConfig::default()
         };
         let json = serde_json::to_string(&config).unwrap();
-        assert!(!json.contains("\"debug_view\""));
         let loaded: OverlayConfig = serde_json::from_str(&json).unwrap();
-        assert!(!loaded.debug_view);
+        assert!(loaded.debug_view);
     }
 
     #[test]

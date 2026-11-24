@@ -23,7 +23,7 @@ type DefenseStatusFunc =
     unsafe extern "system" fn(*const usize, *mut f32, *const usize, *const usize);
 
 static_detour! {
-    static AttackMultiplier: unsafe extern "system" fn(
+    pub(crate) static AttackMultiplier: unsafe extern "system" fn(
         *const usize,
         *const usize,
         f32,
@@ -33,7 +33,7 @@ static_detour! {
         *const usize
     ) -> f32;
 
-    static DefenseStatus: unsafe extern "system" fn(
+    pub(crate) static DefenseStatus: unsafe extern "system" fn(
         *const usize,
         *mut f32,
         *const usize,

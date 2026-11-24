@@ -6,7 +6,7 @@ use crate::{event, process::Process};
 type DeathEventFunc = unsafe extern "system" fn(*const usize) -> usize;
 
 static_detour! {
-    static OnDeathEvent: unsafe extern "system" fn(*const usize) -> usize;
+    pub(crate) static OnDeathEvent: unsafe extern "system" fn(*const usize) -> usize;
 }
 
 const ON_DEATH_EVENT_SIG: &str = "e8 $ { ' } 49 ? ? 48 ? ? ? ? ? ? 83 78 ? ?";

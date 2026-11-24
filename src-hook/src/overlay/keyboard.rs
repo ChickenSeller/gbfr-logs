@@ -24,9 +24,9 @@ type KeyStateFn = unsafe extern "system" fn(i32) -> i16;
 type KeyboardStateFn = unsafe extern "system" fn(*mut u8) -> BOOL;
 
 static_detour! {
-    static GetAsyncKeyStateHook: unsafe extern "system" fn(i32) -> i16;
-    static GetKeyStateHook: unsafe extern "system" fn(i32) -> i16;
-    static GetKeyboardStateHook: unsafe extern "system" fn(*mut u8) -> BOOL;
+    pub(crate) static GetAsyncKeyStateHook: unsafe extern "system" fn(i32) -> i16;
+    pub(crate) static GetKeyStateHook: unsafe extern "system" fn(i32) -> i16;
+    pub(crate) static GetKeyboardStateHook: unsafe extern "system" fn(*mut u8) -> BOOL;
 }
 
 static BLOCKED: AtomicBool = AtomicBool::new(false);

@@ -25,9 +25,9 @@ type SetCursorPosFn = unsafe extern "system" fn(i32, i32) -> BOOL;
 type GetCursorPosFn = unsafe extern "system" fn(*mut POINT) -> BOOL;
 
 static_detour! {
-    static ClipCursorHook: unsafe extern "system" fn(*const RECT) -> BOOL;
-    static SetCursorPosHook: unsafe extern "system" fn(i32, i32) -> BOOL;
-    static GetCursorPosHook: unsafe extern "system" fn(*mut POINT) -> BOOL;
+    pub(crate) static ClipCursorHook: unsafe extern "system" fn(*const RECT) -> BOOL;
+    pub(crate) static SetCursorPosHook: unsafe extern "system" fn(i32, i32) -> BOOL;
+    pub(crate) static GetCursorPosHook: unsafe extern "system" fn(*mut POINT) -> BOOL;
 }
 
 struct CursorState {

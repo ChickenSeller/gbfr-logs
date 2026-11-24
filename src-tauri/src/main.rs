@@ -797,6 +797,16 @@ fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
             }
             "quit" => {
                 let _ = handle.save_window_state(StateFlags::all());
+                // Take the hook out of the game too, so its overlay goes and the next launch
+                // can inject again without restarting the game.
+                let feed = handle.state::<overlay::OverlayFeed>().inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    let _ = tokio::time::timeout(
+                        std::time::Duration::from_secs(1),
+                        feed.unload_hook(),
+                    )
+                    .await;
+                });
                 handle.exit(0)
             }
             _ => {}

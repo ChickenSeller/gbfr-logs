@@ -37,7 +37,7 @@ pub fn note(key: impl Into<String>, value: impl Into<String>) {
 
 /// Builds the report on its own thread, so the pipe reader is never held up.
 pub fn request_report() {
-    std::thread::spawn(|| {
+    crate::shutdown::spawn(|| {
         let report = report().to_string();
         if let Some(tx) = TX.get() {
             let _ = tx.send(Message::DiagnosticsReport(report));
@@ -64,6 +64,7 @@ fn report() -> Value {
         "enemy_floats": enemy_floats(),
         "characters": characters(),
         "party_actions": party_actions(),
+        "party_loadouts": party_loadouts(),
         "terrain": terrain(),
     })
 }
@@ -150,6 +151,79 @@ fn terrain() -> Value {
             })
             .collect(),
     )
+}
+
+/// Raw memory where a party member's loadout should be, to find the 2.0.2 layout of weapon,
+/// stats, overmasteries and sigils by searching for known id hashes: the member's object
+/// around its player key (+0x1AB40; the pre-2.0 player data sat there) and the 0x250-byte
+/// identity snapshot it points to at +0x1AE90 (the pre-2.0 sigil list: 12 sigils, then names).
+fn party_loadouts() -> Value {
+    const FROM: usize = 0x19800;
+    const LEN: usize = 0x2000;
+    const SNAPSHOT_POINTER: usize = 0x1AE90;
+    const SNAPSHOT_LEN: usize = 0x250;
+    /// Whole actor and player record, to search for the weapon and stats.
+    const ACTOR_LEN: usize = 0x1C000;
+    const RECORD_LEN: usize = 0x6000;
+    let words = |address: usize, len: usize| -> Vec<String> {
+        (0..len / 4)
+            .map(|i| {
+                crate::hooks::read_value::<u32>((address + i * 4) as *const u32)
+                    .map_or_else(|| "?".to_string(), |w| format!("{w:x}"))
+            })
+            .collect()
+    };
+    Value::Array(
+        crate::hooks::statuses::party_instances()
+            .into_iter()
+            .map(|(index, instance)| {
+                let snapshot = crate::hooks::read_value::<usize>(
+                    (instance + SNAPSHOT_POINTER) as *const usize,
+                )
+                .filter(|p| *p > 0x10000);
+                json!({
+                    "index": index,
+                    "class": crate::hooks::rtti::class_name(instance),
+                    "from": format!("{FROM:#x}"),
+                    "words": words(instance + FROM, LEN),
+                    "snapshot": snapshot.map(|p| words(p, SNAPSHOT_LEN)),
+                    "object_nonzero": nonzero_words(instance, ACTOR_LEN),
+                })
+            })
+            .chain(
+                crate::hooks::player::records()
+                    .into_iter()
+                    .map(|(party, record)| {
+                        json!({
+                            "record_party_index": party,
+                            "record": format!("{record:#x}"),
+                            "object_nonzero": nonzero_words(record, RECORD_LEN),
+                        })
+                    }),
+            )
+            .collect(),
+    )
+}
+
+/// Every non-zero u32 of `len` bytes at `address` as `"offset:value"` (hex), to keep dumps of
+/// whole objects small.
+fn nonzero_words(address: usize, len: usize) -> Vec<String> {
+    const CHUNK: usize = 0x1000;
+    let mut out = Vec::new();
+    for chunk in (0..len).step_by(CHUNK) {
+        let Some(bytes) =
+            crate::hooks::read_value::<[u8; CHUNK]>((address + chunk) as *const [u8; CHUNK])
+        else {
+            continue;
+        };
+        for i in 0..CHUNK / 4 {
+            let w = u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+            if w != 0 {
+                out.push(format!("{:x}:{w:x}", chunk + i * 4));
+            }
+        }
+    }
+    out
 }
 
 /// Each party member's `ExActManager` (offset and first bytes), with every qword that points

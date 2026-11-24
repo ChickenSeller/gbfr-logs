@@ -210,6 +210,15 @@ impl DamageableActor {
     }
 }
 
+/// Where `instance`'s hurtbox records are and how many bytes they take, for tracing.
+pub fn records_region(instance: usize) -> Option<(usize, usize)> {
+    let offset = super::rtti::base_offset(instance, EX_DAMAGE)?;
+    let ex_damage = instance + offset;
+    let records = read_process_value::<usize>((ex_damage + RECORDS) as *const usize)?;
+    let count = read_process_value::<usize>((ex_damage + COUNT) as *const usize)?;
+    (records != 0 && count > 0 && count <= MAX_RECORDS).then_some((records, count * RECORD_SIZE))
+}
+
 /// Every hurtbox of `instance`, enabled or not. Empty if it has no `ExDamage`.
 pub fn of(instance: usize) -> Vec<Hurtbox> {
     let Some(offset) = super::rtti::base_offset(instance, EX_DAMAGE) else {

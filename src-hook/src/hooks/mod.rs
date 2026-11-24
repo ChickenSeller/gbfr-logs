@@ -19,6 +19,7 @@ use self::{damage::OnProcessDamageHook, player::OnLoadPlayerIdentityHook, quest:
 pub mod actions;
 mod area;
 pub mod body_collision;
+pub mod boss_trace;
 mod damage;
 mod damage_details;
 mod death;
@@ -28,7 +29,7 @@ mod ffi;
 mod globals;
 pub mod hits;
 pub mod hurtboxes;
-mod player;
+pub mod player;
 mod quest;
 pub mod rtti;
 mod sba;
@@ -95,6 +96,7 @@ pub fn setup_hooks(tx: event::Tx) -> Result<()> {
     }
 
     statuses::setup(process.base_address, tx.clone());
+    boss_trace::setup();
 
     // Core DPS tracking. The main damage signature is still stable in game 2.0.2.
     OnProcessDamageHook::new(tx.clone()).setup(&process)?;
@@ -132,6 +134,33 @@ pub fn setup_hooks(tx: event::Tx) -> Result<()> {
     warn!("Running in game 2.0 compatibility mode: equipment and auxiliary hooks are disabled");
 
     Ok(())
+}
+
+/// Puts every hooked game function back as it was, for unloading. Detours never installed
+/// (unsupported game versions) are skipped.
+pub fn disable_detours() {
+    fn off<T: retour::Function>(name: &str, detour: &retour::StaticDetour<T>) {
+        if detour.is_enabled() {
+            if let Err(error) = unsafe { detour.disable() } {
+                warn!("Could not remove the {name} hook: {error}");
+            }
+        }
+    }
+    off("OnEnterArea", &area::OnEnterArea);
+    off("ProcessDamageEvent", &damage::ProcessDamageEvent);
+    off("ProcessDotEvent", &damage::ProcessDotEvent);
+    off("AttackMultiplier", &damage_details::AttackMultiplier);
+    off("DefenseStatus", &damage_details::DefenseStatus);
+    off("OnDeathEvent", &death::OnDeathEvent);
+    off("RefreshPlayerIdentity", &player::RefreshPlayerIdentity);
+    off("OnLoadQuestState", &quest::OnLoadQuestState);
+    off("OnShowResultScreen", &quest::OnShowResultScreen);
+    off("OnBattleEnd", &quest::OnBattleEnd);
+    off("OnSBAUpdate", &sba::OnSBAUpdate);
+    off("OnSBAAttempt", &sba::OnSBAAttempt);
+    off("OnCheckSBACollision", &sba::OnCheckSBACollision);
+    off("OnContinueSBAChain", &sba::OnContinueSBAChain);
+    off("OnRemoteSBAUpdate", &sba::OnRemoteSBAUpdate);
 }
 
 /// The injected hook can outlive the desktop app. When a new pipe client

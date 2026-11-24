@@ -29,6 +29,9 @@ pub enum OverlayMessage {
     ToggleWindow(OverlayWindow),
     /// Asks the hook for a runtime probe, answered with `Message::DiagnosticsReport`.
     DiagnosticsRequest,
+    /// The app is quitting: the hook removes itself from the game. Last, so older hooks only
+    /// fail to decode it.
+    Unload,
 }
 
 /// The in-game windows that can be shown or hidden on their own.

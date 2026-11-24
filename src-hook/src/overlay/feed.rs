@@ -64,6 +64,7 @@ pub fn spawn() {
                                 Ok(OverlayMessage::DiagnosticsRequest) => {
                                     crate::diagnostics::request_report()
                                 }
+                                Ok(OverlayMessage::Unload) => crate::shutdown::request(),
                                 Err(error) => warn!("Bad overlay message: {error}"),
                             }
                         }

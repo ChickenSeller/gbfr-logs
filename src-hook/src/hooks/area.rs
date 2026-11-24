@@ -8,7 +8,7 @@ use retour::static_detour;
 type OnEnterAreaFunc = unsafe extern "system" fn(u32, *const usize, u8, *const usize) -> usize;
 
 static_detour! {
-    static OnEnterArea: unsafe extern "system" fn(u32, *const usize, u8, *const usize) -> usize;
+    pub(crate) static OnEnterArea: unsafe extern "system" fn(u32, *const usize, u8, *const usize) -> usize;
 }
 
 const ON_ENTER_AREA_SIG: &str = "e8 $ { ' } c5 ? ? ? c5 f8 29 45 ? c7 45 ? ? ? ? ?";

@@ -55,10 +55,11 @@ static CLASS_NAMES: OnceLock<Mutex<HashMap<usize, Option<String>>>> = OnceLock::
 /// Starts the polling thread.
 pub fn setup(game_base: usize, tx: event::Tx) {
     let _ = GAME_BASE.set(game_base);
-    std::thread::spawn(move || loop {
-        std::thread::sleep(POLL_INTERVAL);
-        poll(&tx);
-        log_action_changes();
+    crate::shutdown::spawn(move || {
+        while crate::shutdown::sleep(POLL_INTERVAL) {
+            poll(&tx);
+            log_action_changes();
+        }
     });
     info!("Status tracking enabled");
 }

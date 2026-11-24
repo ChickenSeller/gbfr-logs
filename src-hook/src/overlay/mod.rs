@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::imgui::{self, Condition, WindowFlags};
-use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter, RenderContext};
+use hudhook::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MH_STATUS};
+use hudhook::{Hooks, ImguiRenderLoop, MessageFilter, RenderContext};
 use log::{info, warn};
 use protocol::{Message, OverlaySettings, OverlayUiState, OverlayWindow};
 
@@ -39,6 +40,10 @@ fn is_disabled_by_user() -> bool {
 /// Installs the Present hook. Errors are logged and never propagate: damage tracking must keep
 /// working even when the overlay cannot attach.
 pub fn setup(tx: crate::event::Tx) {
+    // Meter snapshots and commands (including unload) from the desktop app. `setup` runs
+    // inside the hook's tokio runtime.
+    feed::spawn();
+
     if is_disabled_by_user() {
         info!("Overlay disabled by {DISABLE_FILE_NAME} marker file");
         return;
@@ -58,19 +63,11 @@ pub fn setup(tx: crate::event::Tx) {
         }
     }
 
-    // Meter snapshots from the desktop app. `setup` runs inside the hook's tokio runtime.
-    feed::spawn();
-
     // `get_target_addrs` inside hudhook creates a dummy device and panics if that fails.
     // Isolate it on its own thread so a panic can only take the overlay down.
     let result = std::thread::Builder::new()
         .name("overlay-setup".into())
-        .spawn(|| {
-            Hudhook::builder()
-                .with::<ImguiDx11Hooks>(OverlayRenderLoop::new(tx))
-                .build()
-                .apply()
-        })
+        .spawn(|| unsafe { install_present(tx) })
         .map(|handle| handle.join());
 
     match result {
@@ -79,6 +76,76 @@ pub fn setup(tx: crate::event::Tx) {
         Ok(Err(_)) => warn!("Overlay setup panicked; overlay disabled"),
         Err(error) => warn!("Could not spawn overlay setup thread: {error}"),
     }
+}
+
+/// The Present hook, kept here rather than inside hudhook so it can be removed again.
+struct PresentHook(ImguiDx11Hooks);
+// Only touched under the mutex, from setup and unload.
+unsafe impl Send for PresentHook {}
+
+static PRESENT: std::sync::Mutex<Option<PresentHook>> = std::sync::Mutex::new(None);
+
+/// What `Hudhook::apply` does, keeping the hook object for [`shutdown`].
+unsafe fn install_present(tx: crate::event::Tx) -> Result<(), MH_STATUS> {
+    match MH_Initialize() {
+        MH_STATUS::MH_OK | MH_STATUS::MH_ERROR_ALREADY_INITIALIZED => {}
+        status => return Err(status),
+    }
+    let hooks = ImguiDx11Hooks::new(OverlayRenderLoop::new(tx));
+    for hook in hooks.hooks() {
+        hook.queue_enable()?;
+    }
+    match MH_ApplyQueued() {
+        MH_STATUS::MH_OK => {}
+        status => return Err(status),
+    }
+    *PRESENT.lock().unwrap_or_else(|e| e.into_inner()) = Some(PresentHook(hooks));
+    Ok(())
+}
+
+/// Removes the overlay from the game, for unloading: input hooks first, then Present. The
+/// overlay's state is freed once frames already inside Present have finished.
+pub fn shutdown() {
+    fn off<T: retour::Function>(name: &str, detour: &retour::StaticDetour<T>) {
+        if detour.is_enabled() {
+            if let Err(error) = unsafe { detour.disable() } {
+                warn!("Could not remove the {name} hook: {error}");
+            }
+        }
+    }
+    off("ClipCursor", &cursor::ClipCursorHook);
+    off("SetCursorPos", &cursor::SetCursorPosHook);
+    off("GetCursorPos", &cursor::GetCursorPosHook);
+    off("GetAsyncKeyState", &keyboard::GetAsyncKeyStateHook);
+    off("GetKeyState", &keyboard::GetKeyStateHook);
+    off("GetKeyboardState", &keyboard::GetKeyboardStateHook);
+    off("PeekMessageA", &message_loop::PeekMessageAHook);
+    off("GetRawInputData", &message_loop::GetRawInputDataHook);
+    dinput::uninstall();
+
+    let present = PRESENT.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let Some(mut present) = present else {
+        return;
+    };
+    unsafe {
+        for hook in present.0.hooks() {
+            if let Err(status) = hook.queue_disable() {
+                warn!("Could not queue removing the Present hook: {status:?}");
+            }
+        }
+        if MH_ApplyQueued() != MH_STATUS::MH_OK {
+            warn!("Could not remove the Present hook; leaving the overlay state in place");
+            return;
+        }
+    }
+    // A few frames: any Present that entered the hook before it was removed returns.
+    std::thread::sleep(Duration::from_millis(300));
+    unsafe {
+        // Restores the game's window procedure and frees the ImGui and D3D resources.
+        present.0.unhook();
+        let _ = MH_Uninitialize();
+    }
+    info!("Overlay removed");
 }
 
 /// In-game font selection. Changes are applied by rebuilding the atlas before a frame.

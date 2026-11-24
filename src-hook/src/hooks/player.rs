@@ -14,7 +14,7 @@ use crate::{event, process::Process};
 type RefreshPlayerIdentityFunc = unsafe extern "system" fn(*const usize);
 
 static_detour! {
-    static RefreshPlayerIdentity: unsafe extern "system" fn(*const usize);
+    pub(crate) static RefreshPlayerIdentity: unsafe extern "system" fn(*const usize);
 }
 
 /// Offset of the 0x250-byte player identity snapshot in a game 2.0.2 player
@@ -41,6 +41,21 @@ const ACTOR_PLAYER_KEY_OFFSET: usize = 0x1AB40;
 /// identity snapshot. The hook only copies metadata from the record.
 const REFRESH_PLAYER_IDENTITY_SIG: &str =
     "55 41 57 41 56 41 54 56 57 53 48 83 ec 70 48 8d 6c 24 70 48 c7 45 f8 fe ff ff ff 80 b9 bc 5e 00 00 00";
+
+/// The player record last refreshed for each party slot, for diagnostics: the 2.0.2 loadout
+/// (weapon, stats) may live there rather than in the actor.
+static RECORDS: std::sync::Mutex<Vec<(u8, usize)>> = std::sync::Mutex::new(Vec::new());
+
+fn remember_record(party_index: u8, record: usize) {
+    let mut records = RECORDS.lock().unwrap_or_else(|e| e.into_inner());
+    records.retain(|(index, _)| *index != party_index);
+    records.push((party_index, record));
+}
+
+/// Player records by party slot, as last refreshed.
+pub fn records() -> Vec<(u8, usize)> {
+    RECORDS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct StoredPlayerIdentity {
@@ -204,6 +219,7 @@ impl OnLoadPlayerIdentityHook {
         let Some(identity) = read_player_identity(snapshot) else {
             return;
         };
+        remember_record(identity.party_index, record as usize);
 
         #[cfg(feature = "identity-debug")]
         {
@@ -438,6 +454,121 @@ fn read_actor_player_key(actor: *const usize) -> Option<u32> {
             .cast::<u32>(),
     )
     .filter(|player_key| *player_key != 0 && *player_key != INVALID_PLAYER_KEY)
+}
+
+/// Where a game 2.0.2 player actor keeps its loadout, found by searching dumps of four party
+/// members for their known weapon and sigil hashes. The player record refreshed by the identity
+/// hook holds the same data from +0x00 (stats) and +0x50 (weapon).
+const ACTOR_STATS_OFFSET: usize = 0x15030;
+const ACTOR_WEAPON_OFFSET: usize = 0x15080;
+/// Overmasteries: 4 entries of `{id, flags, unknown, value f32}`, as before 2.0 (the player
+/// record has them at +0x58B8).
+const ACTOR_OVERMASTERY_OFFSET: usize = 0x1A8E8;
+const OVERMASTERY_COUNT: usize = 4;
+const OVERMASTERY_SIZE: usize = 0x10;
+const SIGIL_COUNT: usize = 12;
+const SIGIL_SIZE: usize = 0x24;
+
+fn read_u32(address: *const u8, offset: usize) -> Option<u32> {
+    super::read_process_value::<u32>(address.wrapping_add(offset).cast::<u32>())
+}
+
+fn read_f32(address: *const u8, offset: usize) -> Option<f32> {
+    super::read_process_value::<f32>(address.wrapping_add(offset).cast::<f32>())
+}
+
+/// The sigils at the start of the identity snapshot: unchanged since before 2.0, 12 entries of
+/// 9 u32s (two traits with levels, sigil id, equipped character, level, acquisition count,
+/// notification).
+fn read_sigils(snapshot: *const u8) -> Option<Vec<protocol::Sigil>> {
+    (0..SIGIL_COUNT)
+        .map(|index| {
+            let entry = snapshot.wrapping_add(index * SIGIL_SIZE);
+            Some(protocol::Sigil {
+                first_trait_id: read_u32(entry, 0x00)?,
+                first_trait_level: read_u32(entry, 0x04)?,
+                second_trait_id: read_u32(entry, 0x08)?,
+                second_trait_level: read_u32(entry, 0x0C)?,
+                sigil_id: read_u32(entry, 0x10)?,
+                equipped_character: read_u32(entry, 0x14)?,
+                sigil_level: read_u32(entry, 0x18)?,
+                acquisition_count: read_u32(entry, 0x1C)?,
+                notification_enum: read_u32(entry, 0x20)?,
+            })
+        })
+        .collect()
+}
+
+/// The actor's full loadout as the pre-2.0 player load event carried it, for the identity just
+/// resolved from this actor. Stats and the weapon's first half keep their old layout; the
+/// weapon's level and base HP/attack moved in 2.0 and are left at 0 until verified.
+pub fn load_event_for_actor(
+    actor: *const usize,
+    identity: &PlayerIdentityEvent,
+) -> Option<protocol::PlayerLoadEvent> {
+    let actor = actor as *const u8;
+    let snapshot = super::read_process_value::<*const u8>(
+        actor
+            .wrapping_add(ACTOR_IDENTITY_SNAPSHOT_OFFSET)
+            .cast::<*const u8>(),
+    )?;
+    if snapshot.is_null() {
+        return None;
+    }
+    let stats = actor.wrapping_add(ACTOR_STATS_OFFSET);
+    let weapon = actor.wrapping_add(ACTOR_WEAPON_OFFSET);
+    let weapon_id = read_u32(weapon, 0x04)?;
+    let level = read_u32(stats, 0x00)?;
+    // A loadout that is not there yet (loading) reads as zeros or the invalid hash.
+    if weapon_id == 0 || weapon_id == INVALID_PLAYER_KEY || level == 0 || level > 200 {
+        return None;
+    }
+    Some(protocol::PlayerLoadEvent {
+        sigils: read_sigils(snapshot)?,
+        character_name: identity.character_name.clone(),
+        display_name: identity.display_name.clone(),
+        character_type: identity.character_type,
+        party_index: identity.party_index,
+        actor_index: identity.actor_index,
+        is_online: identity.is_online,
+        weapon_info: protocol::WeaponInfo {
+            weapon_id,
+            star_level: read_u32(weapon, 0x14)?,
+            plus_marks: read_u32(weapon, 0x18)?,
+            awakening_level: read_u32(weapon, 0x1C)?,
+            trait_1_id: read_u32(weapon, 0x20)?,
+            trait_1_level: read_u32(weapon, 0x24)?,
+            trait_2_id: read_u32(weapon, 0x28)?,
+            trait_2_level: read_u32(weapon, 0x2C)?,
+            trait_3_id: read_u32(weapon, 0x30)?,
+            trait_3_level: read_u32(weapon, 0x34)?,
+            wrightstone_id: read_u32(weapon, 0x38)?,
+            weapon_level: 0,
+            weapon_hp: 0,
+            weapon_attack: 0,
+        },
+        overmastery_info: protocol::OvermasteryInfo {
+            overmasteries: (0..OVERMASTERY_COUNT)
+                .map(|index| {
+                    let entry =
+                        actor.wrapping_add(ACTOR_OVERMASTERY_OFFSET + index * OVERMASTERY_SIZE);
+                    Some(protocol::Overmastery {
+                        id: read_u32(entry, 0x00)?,
+                        flags: read_u32(entry, 0x04)?,
+                        value: read_f32(entry, 0x0C)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?,
+        },
+        player_stats: protocol::PlayerStats {
+            level,
+            total_hp: read_u32(stats, 0x04)?,
+            total_attack: read_u32(stats, 0x08)?,
+            stun_power: read_f32(stats, 0x10)?,
+            critical_rate: read_f32(stats, 0x14)?,
+            total_power: read_u32(stats, 0x18)?,
+        },
+    })
 }
 
 fn read_actor_identity(actor: *const usize) -> Option<StoredPlayerIdentity> {

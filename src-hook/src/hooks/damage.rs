@@ -14,8 +14,8 @@ type ProcessDamageEventFunc =
 type ProcessDotEventFunc = unsafe extern "system" fn(*const usize, *const usize) -> usize;
 
 static_detour! {
-    static ProcessDamageEvent: unsafe extern "system" fn(*const usize, *const usize, *const usize, u8) -> usize;
-    static ProcessDotEvent: unsafe extern "system" fn(*const usize, *const usize) -> usize;
+    pub(crate) static ProcessDamageEvent: unsafe extern "system" fn(*const usize, *const usize, *const usize, u8) -> usize;
+    pub(crate) static ProcessDotEvent: unsafe extern "system" fn(*const usize, *const usize) -> usize;
 }
 
 #[derive(Clone)]
@@ -179,7 +179,12 @@ impl OnProcessDamageHook {
             source_parent_idx,
         );
         for identity in identities {
+            // The loadout travels with each new identity, as the pre-2.0 load event did.
+            let load = super::player::load_event_for_actor(identity_actor, &identity);
             let _ = self.tx.send(Message::PlayerIdentityEvent(identity));
+            if let Some(load) = load {
+                let _ = self.tx.send(Message::PlayerLoadEvent(load));
+            }
         }
 
         // Party members' hits, for the debug view.
@@ -336,7 +341,12 @@ impl OnProcessDotHook {
             source_parent_idx,
         );
         for identity in identities {
+            // The loadout travels with each new identity, as the pre-2.0 load event did.
+            let load = super::player::load_event_for_actor(identity_actor, &identity);
             let _ = self.tx.send(Message::PlayerIdentityEvent(identity));
+            if let Some(load) = load {
+                let _ = self.tx.send(Message::PlayerLoadEvent(load));
+            }
         }
 
         let target_idx = actor_idx(target);

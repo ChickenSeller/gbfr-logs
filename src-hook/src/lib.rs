@@ -15,6 +15,7 @@ mod hooks;
 #[cfg(feature = "overlay")]
 mod overlay;
 mod process;
+mod shutdown;
 
 use protocol::Message;
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
@@ -73,7 +74,10 @@ impl Server {
         info!("Named pipe listener ready");
 
         loop {
-            let read_pipe = listener.accept().await;
+            let read_pipe = tokio::select! {
+                read_pipe = listener.accept() => read_pipe,
+                () = shutdown::wait() => break,
+            };
             match read_pipe {
                 Ok(stream) => {
                     info!("Pipe client connected");
@@ -97,8 +101,21 @@ impl Server {
     }
 }
 
-#[tokio::main]
-async fn setup() {
+/// Runs the hook until the app asks it to unload.
+fn setup() {
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            warn!("Could not start the hook runtime: {error}");
+            return;
+        }
+    };
+    runtime.block_on(run());
+    // Pipe tasks are dropped here, which closes the app's connection.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(2));
+}
+
+async fn run() {
     info!("Setting up named pipe listener");
 
     let server = Server::new();
@@ -153,5 +170,5 @@ fn entry() {
     }
 
     let _ = initialize_logger();
-    std::thread::spawn(setup);
+    shutdown::spawn(setup);
 }

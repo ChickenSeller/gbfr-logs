@@ -30,8 +30,8 @@ type PeekMessageFn = unsafe extern "system" fn(*mut MSG, HWND, u32, u32, u32) ->
 type GetRawInputDataFn = unsafe extern "system" fn(isize, u32, *mut c_void, *mut u32, u32) -> u32;
 
 static_detour! {
-    static PeekMessageAHook: unsafe extern "system" fn(*mut MSG, HWND, u32, u32, u32) -> BOOL;
-    static GetRawInputDataHook: unsafe extern "system" fn(isize, u32, *mut c_void, *mut u32, u32) -> u32;
+    pub(crate) static PeekMessageAHook: unsafe extern "system" fn(*mut MSG, HWND, u32, u32, u32) -> BOOL;
+    pub(crate) static GetRawInputDataHook: unsafe extern "system" fn(isize, u32, *mut c_void, *mut u32, u32) -> u32;
 }
 
 /// Same value as `KEYBOARD_OVERRUN_MAKE_CODE`; Windows uses it for keys that carry no input.

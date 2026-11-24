@@ -25,7 +25,7 @@ use hudhook::windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use hudhook::windows::Win32::System::Memory::{
     VirtualProtect, PAGE_PROTECTION_FLAGS, PAGE_READWRITE,
 };
-use log::info;
+use log::{info, warn};
 
 type GetDeviceStateFn = unsafe extern "system" fn(*mut c_void, u32, *mut c_void) -> HRESULT;
 type GetDeviceDataFn =
@@ -47,6 +47,9 @@ static ORIGINAL_STATE_W: AtomicUsize = AtomicUsize::new(0);
 static ORIGINAL_DATA_W: AtomicUsize = AtomicUsize::new(0);
 static ORIGINAL_STATE_A: AtomicUsize = AtomicUsize::new(0);
 static ORIGINAL_DATA_A: AtomicUsize = AtomicUsize::new(0);
+/// The patched vtables, to put the originals back when unloading.
+static VTABLE_W: AtomicUsize = AtomicUsize::new(0);
+static VTABLE_A: AtomicUsize = AtomicUsize::new(0);
 
 /// While `true`, the game receives empty mouse and keyboard input.
 pub fn set_blocked(blocked: bool) {
@@ -130,6 +133,7 @@ unsafe fn patch_vtable(
     data_replacement: GetDeviceDataFn,
     original_state: &AtomicUsize,
     original_data: &AtomicUsize,
+    patched: &AtomicUsize,
 ) -> Result<()> {
     if vtable.is_null() {
         return Err(anyhow!("null DirectInput vtable"));
@@ -145,18 +149,64 @@ unsafe fn patch_vtable(
     original_data.store(data, Ordering::SeqCst);
     swap_slot(vtable, SLOT_GET_DEVICE_STATE, state_replacement as usize)?;
     swap_slot(vtable, SLOT_GET_DEVICE_DATA, data_replacement as usize)?;
+    patched.store(vtable as usize, Ordering::SeqCst);
     Ok(())
+}
+
+/// Puts the original methods back in a vtable this module patched.
+unsafe fn restore_vtable(
+    patched: &AtomicUsize,
+    original_state: &AtomicUsize,
+    original_data: &AtomicUsize,
+) {
+    let vtable = patched.swap(0, Ordering::SeqCst) as *mut usize;
+    if vtable.is_null() {
+        return;
+    }
+    for (slot, original) in [
+        (SLOT_GET_DEVICE_STATE, original_state),
+        (SLOT_GET_DEVICE_DATA, original_data),
+    ] {
+        let original = original.load(Ordering::SeqCst);
+        if original != 0 && is_replacement(vtable.add(slot).read_volatile()) {
+            if let Err(error) = swap_slot(vtable, slot, original) {
+                warn!("Could not restore a DirectInput method: {error:#}");
+            }
+        }
+    }
+}
+
+/// Undoes [`install`], for unloading.
+pub fn uninstall() {
+    unsafe {
+        restore_vtable(&VTABLE_W, &ORIGINAL_STATE_W, &ORIGINAL_DATA_W);
+        restore_vtable(&VTABLE_A, &ORIGINAL_STATE_A, &ORIGINAL_DATA_A);
+    }
 }
 
 pub fn install() -> Result<()> {
     unsafe {
         let wide = wide_vtable().context("wide DirectInput device")?;
-        patch_vtable(wide, state_w, data_w, &ORIGINAL_STATE_W, &ORIGINAL_DATA_W)
-            .context("wide DirectInput vtable")?;
+        patch_vtable(
+            wide,
+            state_w,
+            data_w,
+            &ORIGINAL_STATE_W,
+            &ORIGINAL_DATA_W,
+            &VTABLE_W,
+        )
+        .context("wide DirectInput vtable")?;
 
         match ansi_vtable() {
-            Ok(ansi) => patch_vtable(ansi, state_a, data_a, &ORIGINAL_STATE_A, &ORIGINAL_DATA_A)
-                .context("ANSI DirectInput vtable")?,
+            Ok(ansi) => patch_vtable(
+                ansi,
+                state_a,
+                data_a,
+                &ORIGINAL_STATE_A,
+                &ORIGINAL_DATA_A,
+                &VTABLE_A,
+            )
+            .context("ANSI DirectInput vtable")?,
             Err(error) => info!("ANSI DirectInput vtable unavailable: {error:#}"),
         }
     }

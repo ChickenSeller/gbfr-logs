@@ -16,11 +16,11 @@ type OnRemoteSBAUpdateFunc =
     unsafe extern "system" fn(*const usize, *const usize, f32, f32) -> usize;
 
 static_detour! {
-    static OnSBAUpdate: unsafe extern "system" fn(*const usize, f32, u32, u8, u32, u8) -> usize;
-    static OnSBAAttempt: unsafe extern "system" fn(*const usize, f32) -> usize;
-    static OnCheckSBACollision: unsafe extern "system" fn(*const usize, f32) -> usize;
-    static OnContinueSBAChain: unsafe extern "system" fn(*const usize, *const usize) -> usize;
-    static OnRemoteSBAUpdate: unsafe extern "system" fn(*const usize, *const usize, f32, f32) -> usize;
+    pub(crate) static OnSBAUpdate: unsafe extern "system" fn(*const usize, f32, u32, u8, u32, u8) -> usize;
+    pub(crate) static OnSBAAttempt: unsafe extern "system" fn(*const usize, f32) -> usize;
+    pub(crate) static OnCheckSBACollision: unsafe extern "system" fn(*const usize, f32) -> usize;
+    pub(crate) static OnContinueSBAChain: unsafe extern "system" fn(*const usize, *const usize) -> usize;
+    pub(crate) static OnRemoteSBAUpdate: unsafe extern "system" fn(*const usize, *const usize, f32, f32) -> usize;
 }
 
 const ON_HANDLE_SBA_UPDATE_SIG: &str = "e8 $ { ' } c5 fa 10 46 ? c5 f8 2e 86 80 00 00 00";

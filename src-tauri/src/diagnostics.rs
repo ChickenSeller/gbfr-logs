@@ -108,6 +108,17 @@ fn write_zip(app_version: &str, probe: &serde_json::Value) -> Result<PathBuf> {
         if let Ok(settings) = std::fs::read(data.join("overlay.json")) {
             add("overlay.json", &settings)?;
         }
+        // The hook's recordings of bosses' memory over recent fights.
+        if let Ok(entries) = std::fs::read_dir(data.join(protocol::paths::BOSS_TRACE_DIR)) {
+            for entry in entries.flatten() {
+                if let Ok(trace) = std::fs::read(entry.path()) {
+                    add(
+                        &format!("boss-traces/{}", entry.file_name().to_string_lossy()),
+                        &trace,
+                    )?;
+                }
+            }
+        }
     }
     // The app's own logs (tauri-plugin-log writes next to the working directory).
     if let Ok(entries) = std::fs::read_dir("logs") {

@@ -712,10 +712,13 @@ export const ViewPage = () => {
                           <Text size="xs" fs="italic" fw={300}>
                             Awakening {player.weaponInfo?.awakeningLevel || 0}/10
                           </Text>
-                          <Text size="xs" fs="italic" fw={300}>
-                            Lvl {player.weaponInfo?.weaponLevel || 0} / ATK {player.weaponInfo?.weaponAttack || 0} / HP{" "}
-                            {player.weaponInfo?.weaponHp || 0}
-                          </Text>
+                          {/* Game 2.0 moved these; logs recorded since then leave them at 0. */}
+                          {(player.weaponInfo?.weaponLevel || 0) > 0 && (
+                            <Text size="xs" fs="italic" fw={300}>
+                              Lvl {player.weaponInfo?.weaponLevel || 0} / ATK {player.weaponInfo?.weaponAttack || 0} / HP{" "}
+                              {player.weaponInfo?.weaponHp || 0}
+                            </Text>
+                          )}
                           <Text size="xs" fw={700}>
                             {translateItemId(player.weaponInfo?.wrightstoneId || EMPTY_ID)}
                           </Text>

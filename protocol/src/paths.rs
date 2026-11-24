@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 pub const DATA_DIR_NAME: &str = "gbfr-logs-kaguya";
 /// The hook's log file inside the data folder.
 pub const HOOK_LOG_FILE: &str = "gbfr-logs-kaguya.txt";
+/// Folder in the data folder where the hook records bosses' memory over a fight.
+pub const BOSS_TRACE_DIR: &str = "boss-traces";
 
 const LEGACY_DATA_DIR_NAME: &str = "gbfr-logs-awa";
 const LEGACY_HOOK_LOG_FILE: &str = "gbfr-logs-awa.txt";
