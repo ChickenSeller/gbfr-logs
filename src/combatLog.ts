@@ -6,7 +6,13 @@ import { t } from "i18next";
 
 import { statusName } from "./statuses";
 import { CharacterType, CombatLogEntry, ComputedPlayerState, EncounterState, PlayerData, SkillState } from "./types";
-import { getSkillName, resolvePlayerColor, translateEnemyTypeId, translatedPlayerName } from "./utils";
+import {
+  getSkillName,
+  resolvePlayerColor,
+  translateCharacterType,
+  translateEnemyTypeId,
+  translatedPlayerName,
+} from "./utils";
 
 export const COMBAT_LOG_KINDS = ["damage", "damageTaken", "status", "partBreak", "sba", "death"] as const;
 export type CombatLogKind = (typeof COMBAT_LOG_KINDS)[number];
@@ -73,8 +79,11 @@ const playerOf = (index: number, characterType: CharacterType): ComputedPlayerSt
 
 /** Name and colour of a party member, as the meter shows them. */
 export const combatLogMember = (context: CombatLogContext, index: number, characterType?: CharacterType) => {
-  const type = characterType ?? context.characters.get(index) ?? { Unknown: 0 };
   const slot = context.partyData.findIndex((data) => data?.actorIndex === index);
+  // Members who neither dealt nor took damage are only known from the party loadouts.
+  const type = characterType ??
+    context.characters.get(index) ??
+    context.partyData[slot]?.characterType ?? { Unknown: 0 };
   const fallbackOrder = [...context.characters.keys()].sort((a, b) => a - b).indexOf(index);
   return {
     name: translatedPlayerName(slot, context.partyData[slot] ?? null, playerOf(index, type), context.showDisplayNames),
@@ -88,6 +97,12 @@ export const sourceName = (typeHash: number, context: CombatLogContext): string 
     if (typeof character === "string" && characterHash(character) === typeHash) {
       return combatLogMember(context, index, character).name;
     }
+  }
+  // A party member who dealt no damage, or a character outside the party.
+  const character = Object.keys(CHARACTER_HASHES).find((name) => CHARACTER_HASHES[name] === typeHash >>> 0);
+  if (character) {
+    const member = context.partyData.find((data) => data?.characterType === character);
+    return member ? combatLogMember(context, member.actorIndex, character).name : translateCharacterType(character);
   }
   return translateEnemyTypeId(typeHash);
 };
@@ -229,6 +244,13 @@ export const partyCharacters = (encounter: EncounterState): Map<number, Characte
   for (const player of Object.values(encounter.party)) characters.set(player.index, player.characterType);
   for (const taken of Object.values(encounter.damageTaken ?? {})) {
     if (!characters.has(taken.index)) characters.set(taken.index, taken.characterType);
+  }
+  // Members who only had statuses: known by the character hash their statuses carry.
+  for (const [index, byClass] of Object.entries(encounter.statuses ?? {})) {
+    const hash = Object.values(byClass).find((stats) => stats.actorType)?.actorType;
+    if (hash === undefined || characters.has(Number(index))) continue;
+    const character = Object.keys(CHARACTER_HASHES).find((name) => CHARACTER_HASHES[name] === hash >>> 0);
+    characters.set(Number(index), character ?? { Unknown: hash });
   }
   return characters;
 };

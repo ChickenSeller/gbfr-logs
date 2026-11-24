@@ -21,6 +21,9 @@ use serde::{Deserialize, Serialize, Serializer};
 pub struct StatusStats {
     pub class_name: String,
     pub type_id: u32,
+    /// Character hash of the member who had it, for members known from nothing else.
+    #[serde(default)]
+    pub actor_type: u32,
     /// Times it was applied.
     pub count: u32,
     /// Total time it was active, in milliseconds.
@@ -90,6 +93,7 @@ impl StatusTracker {
             .or_insert_with(|| StatusStats {
                 class_name: event.class_name.clone(),
                 type_id: event.type_id,
+                actor_type: event.actor_type,
                 ..Default::default()
             });
         stats.count += 1;

@@ -710,7 +710,7 @@ export const ViewPage = () => {
                             {player.weaponInfo?.plusMarks}
                           </Text>
                           <Text size="xs" fs="italic" fw={300}>
-                            Awakening {player.weaponInfo?.awakeningLevel || 0}/10
+                            {t("ui.player-awakening")} {player.weaponInfo?.awakeningLevel || 0}/10
                           </Text>
                           {/* Game 2.0 moved these; logs recorded since then leave them at 0. */}
                           {(player.weaponInfo?.weaponLevel || 0) > 0 && (

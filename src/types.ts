@@ -221,6 +221,8 @@ export type StatusStats = {
   sources: Record<number, number>;
   /** Applied by an enemy's grab at least once */
   grab?: boolean;
+  /** Character hash of the member who had it */
+  actorType?: number;
   /** Damage taken while it was active; a hit counts for every status active at the time */
   damageWhileActive: number;
 };

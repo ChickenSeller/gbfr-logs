@@ -192,6 +192,12 @@ export const exportScreenshotToClipboard = (selector = ".app") => {
   });
 };
 
+/// A character's name; a character the app does not know shows as "Unknown" and its hash.
+export const translateCharacterType = (characterType: CharacterType): string =>
+  typeof characterType === "string"
+    ? t(`characters:${characterType}`, `ui:characters.${characterType}`)
+    : `${t("ui.unknown")} ${toHashString(characterType.Unknown >>> 0)}`;
+
 /// Formats the player name and translates the player's character type.
 export const translatedPlayerName = (
   partySlotIndex: number,
@@ -201,7 +207,7 @@ export const translatedPlayerName = (
 ) => {
   if (!player) return "Guest";
 
-  const characterType = t(`characters:${player.characterType}`, `ui:characters.${player.characterType}`);
+  const characterType = translateCharacterType(player.characterType);
   const displayName = `${partySlotData?.displayName} (${characterType})`;
   const name = show_display_names && partySlotData?.displayName ? displayName : characterType;
 
