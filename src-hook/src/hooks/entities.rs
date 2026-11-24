@@ -42,6 +42,19 @@ pub struct Character {
     pub kind: Kind,
 }
 
+/// Whether an item has been taken: a treasure box opened (state 3 opening, 4 open) or a field
+/// orb (`Itf000`) collected (2 collecting, 3 collected). Both keep their state at `+0x40`, read
+/// from their update functions (`BaTreasureBox`, `Itf000`) in game 2.0.2.
+pub fn is_taken(character: &Character) -> bool {
+    let done = match character.class.as_str() {
+        "BaTreasureBox" => 3,
+        "Itf000" => 2,
+        _ => return false,
+    };
+    super::read_process_value::<u32>((character.instance + 0x40) as *const u32)
+        .is_some_and(|state| state >= done)
+}
+
 struct Cache {
     at: Option<Instant>,
     entities: usize,

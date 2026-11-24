@@ -34,6 +34,8 @@ const NPC_COLOR: ImColor32 = ImColor32::from_rgba(230, 200, 255, 220);
 const BODY_COLOR: ImColor32 = ImColor32::from_rgba(120, 200, 255, 150);
 /// Items and treasure boxes: gold, with a filled diamond, to stand out.
 const ITEM_COLOR: ImColor32 = ImColor32::from_rgba(255, 215, 0, 255);
+/// Opened treasure boxes and collected orbs.
+const ITEM_TAKEN_COLOR: ImColor32 = ImColor32::from_rgba(150, 150, 150, 200);
 /// Terrain wireframe colour; its alpha fades from `TERRAIN_ALPHA` near to a fifth far away.
 const TERRAIN_RGB: [u8; 3] = [150, 255, 170];
 const TERRAIN_ALPHA: f32 = 150.0;
@@ -381,6 +383,11 @@ pub fn render(
         }
         marked.push(feet);
         if character.kind == Kind::Item {
+            let item_color = if crate::hooks::entities::is_taken(character) {
+                ITEM_TAKEN_COLOR
+            } else {
+                ITEM_COLOR
+            };
             if let Some(at) = camera.project([feet[0], feet[1] + 0.3, feet[2]]) {
                 let size = 9.0;
                 let diamond = [
@@ -389,10 +396,10 @@ pub fn render(
                     [at[0], at[1] + size],
                     [at[0] - size, at[1]],
                 ];
-                draw.add_triangle(diamond[0], diamond[1], diamond[2], ITEM_COLOR)
+                draw.add_triangle(diamond[0], diamond[1], diamond[2], item_color)
                     .filled(true)
                     .build();
-                draw.add_triangle(diamond[0], diamond[2], diamond[3], ITEM_COLOR)
+                draw.add_triangle(diamond[0], diamond[2], diamond[3], item_color)
                     .filled(true)
                     .build();
                 draw.add_polyline(
@@ -407,7 +414,7 @@ pub fn render(
                     SHADOW_COLOR,
                     &character.class,
                 );
-                draw.add_text(label, ITEM_COLOR, &character.class);
+                draw.add_text(label, item_color, &character.class);
             }
             continue;
         }
