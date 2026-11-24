@@ -265,7 +265,7 @@ const overlayDamageTaken = (
         count: stats.count,
         totalMs: toCount(stats.totalMs),
         damage: toCount(stats.damageWhileActive ?? 0),
-        highlight: isHighlighted(stats.className),
+        highlight: isHighlighted(stats),
       }));
     const memberTaken = taken[index];
     if (!memberTaken && debuffs.length === 0) return [];

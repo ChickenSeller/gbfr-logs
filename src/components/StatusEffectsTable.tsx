@@ -81,8 +81,8 @@ export const StatusEffectsTable = ({ encounter, partyData, playerColors, showDis
                         span
                         size="sm"
                         title={stats.className}
-                        c={isHighlighted(stats.className) ? "yellow" : undefined}
-                        fw={isHighlighted(stats.className) ? 700 : undefined}
+                        c={isHighlighted(stats) ? "yellow" : undefined}
+                        fw={isHighlighted(stats) ? 700 : undefined}
                       >
                         {statusName(stats.className)}
                       </Text>

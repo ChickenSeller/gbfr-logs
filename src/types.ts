@@ -219,6 +219,8 @@ export type StatusStats = {
   maxMs: number;
   /** Applications per source type hash */
   sources: Record<number, number>;
+  /** Applied by an enemy's grab at least once */
+  grab?: boolean;
   /** Damage taken while it was active; a hit counts for every status active at the time */
   damageWhileActive: number;
 };

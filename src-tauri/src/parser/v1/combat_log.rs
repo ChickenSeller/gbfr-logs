@@ -112,6 +112,11 @@ pub fn entry(time: i64, message: &Message) -> Option<CombatLogEntry> {
             time,
             actor_index: event.actor_index,
         },
+        Message::StatusApplied(event) | Message::StatusRemoved(event)
+            if event.class_name == super::statuses::GRAB_STATUS =>
+        {
+            return None
+        }
         Message::StatusApplied(event) => CombatLogEntry::StatusApplied {
             time,
             actor_index: event.actor_index,

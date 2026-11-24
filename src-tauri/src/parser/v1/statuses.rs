@@ -6,6 +6,13 @@
 use std::collections::HashMap;
 
 use protocol::StatusEvent;
+
+/// Reported by the hook while an enemy holds the member (throws, binds). Not listed itself: it
+/// marks the debuffs the grab applies (`StatusStats::grab`).
+pub const GRAB_STATUS: &str = "StatusDebuffGrab";
+/// A status counts as the grab's when it starts this close to the grab, or during it. Statuses
+/// are polled, so the grab and its debuff are seen up to a poll apart.
+const GRAB_WINDOW_MS: i64 = 1_000;
 use serde::{Deserialize, Serialize, Serializer};
 
 /// Statistics of one status class on one party member.
@@ -25,6 +32,9 @@ pub struct StatusStats {
     /// Damage enemies dealt to the member while this status was active. A hit counts for every
     /// status active at the time.
     pub damage_while_active: u64,
+    /// Applied by an enemy's grab at least once (it started with a grab).
+    #[serde(default)]
+    pub grab: bool,
 }
 
 /// Status statistics per party member (actor index) and class name, plus what is still active.
@@ -58,6 +68,20 @@ impl StatusTracker {
         }
         self.active
             .insert(key, (event.class_name.clone(), timestamp));
+        if event.class_name == GRAB_STATUS {
+            // Whatever started just before the grab came with it.
+            for (class_name, start) in self.active_with_start(event.actor_index) {
+                if timestamp - start <= GRAB_WINDOW_MS {
+                    self.mark_grab(event.actor_index, &class_name);
+                }
+            }
+            return;
+        }
+        let grabbed = self.active.iter().any(|((actor, _), (class, start))| {
+            *actor == event.actor_index
+                && class == GRAB_STATUS
+                && timestamp - start >= -GRAB_WINDOW_MS
+        });
         let stats = self
             .stats
             .entry(event.actor_index)
@@ -69,8 +93,27 @@ impl StatusTracker {
                 ..Default::default()
             });
         stats.count += 1;
+        stats.grab |= grabbed;
         if let Some(source) = event.source_type {
             *stats.sources.entry(source).or_default() += 1;
+        }
+    }
+
+    fn active_with_start(&self, actor_index: u32) -> Vec<(String, i64)> {
+        self.active
+            .iter()
+            .filter(|((actor, _), (class, _))| *actor == actor_index && class != GRAB_STATUS)
+            .map(|(_, (class, start))| (class.clone(), *start))
+            .collect()
+    }
+
+    fn mark_grab(&mut self, actor_index: u32, class_name: &str) {
+        if let Some(stats) = self
+            .stats
+            .get_mut(&actor_index)
+            .and_then(|by_class| by_class.get_mut(class_name))
+        {
+            stats.grab = true;
         }
     }
 
@@ -185,6 +228,24 @@ mod tests {
         let stats = tracker.snapshot(20);
         assert_eq!(stats[&1]["StatusAilmentPoison"].damage_while_active, 500);
         assert_eq!(stats[&1]["StatusDeffenceDebuff"].damage_while_active, 600);
+    }
+
+    #[test]
+    fn grabs_mark_their_debuff_and_are_not_listed() {
+        let mut tracker = StatusTracker::default();
+        tracker.applied(0, &event(1, "StatusAilmentPoison")); // long before: not the grab's
+        tracker.applied(5_000, &event(2, "StatusAilmentFreeze")); // a poll before the grab
+        tracker.applied(5_300, &event(3, GRAB_STATUS));
+        tracker.applied(5_600, &event(4, "StatusDeffenceDebuff")); // during the grab
+        tracker.removed(7_000, &event(3, GRAB_STATUS));
+        tracker.applied(20_000, &event(5, "StatusAttackDebuff")); // long after
+
+        let stats = &tracker.snapshot(21_000)[&1];
+        assert!(!stats.contains_key(GRAB_STATUS));
+        assert!(stats["StatusAilmentFreeze"].grab);
+        assert!(stats["StatusDeffenceDebuff"].grab);
+        assert!(!stats["StatusAilmentPoison"].grab);
+        assert!(!stats["StatusAttackDebuff"].grab);
     }
 
     #[test]
