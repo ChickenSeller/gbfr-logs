@@ -27,7 +27,7 @@ export const usePlayerRow = (live: boolean, player: ComputedPlayerState, partyDa
   const [isOpen, setIsOpen] = useState(false);
 
   const partySlotIndex = partyData.findIndex((partyMember) => partyMember?.actorIndex === player.index);
-  const color = resolvePlayerColor([color_1, color_2, color_3, color_4], partySlotIndex, player.partyIndex);
+  const color = resolvePlayerColor([color_1, color_2, color_3, color_4], partySlotIndex, player.partyIndex, partyData);
 
   const [totalDamage, totalDamageUnit] = humanizeNumbers(player.totalDamage);
   const [dps, dpsUnit] = humanizeNumbers(player.dps);

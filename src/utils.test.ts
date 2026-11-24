@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { EncounterState, MeterColumns } from "./types";
+import { EncounterState, MeterColumns, PlayerData } from "./types";
 import {
   buildFullEncounterText,
   buildSimpleEncounterText,
   getSkillTranslationKeys,
+  resolvePlayerColor,
   toHash,
   toHashString,
 } from "./utils";
@@ -87,5 +88,24 @@ describe("encounter text exports", () => {
       "00:01, 1000, 1000",
       "Name, DMG, DPS, %",
     ]);
+  });
+});
+
+describe("resolvePlayerColor", () => {
+  const colors = ["#ff0000", "#ffab00", "#36b37e", "#00b8d9"];
+  const member = { actorIndex: 7 } as PlayerData;
+
+  it("gives members their slot's colour", () => {
+    expect(resolvePlayerColor(colors, 0, 1, [member])).toBe("#ff0000");
+  });
+
+  it("never gives an unmatched player the colour of a member's slot", () => {
+    // The member holds slot 1; the first unmatched player is first in the party.
+    const party = [member, null, null, null];
+    const unmatched = [0, 2, 3].map((partyIndex) => resolvePlayerColor(colors, -1, partyIndex, party));
+    expect(unmatched).not.toContain("#ff0000");
+    expect(new Set(unmatched).size).toBe(3);
+    // Free slots keep their configured colours.
+    expect(unmatched.slice(1)).toEqual(["#36b37e", "#00b8d9"]);
   });
 });

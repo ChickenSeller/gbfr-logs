@@ -48,7 +48,7 @@ export const AttackCompositionTable = ({ encounter, partyData, playerColors, sho
           return (
             <Table.Tr key={player.index}>
               <Table.Td>
-                <Text size="sm" c={resolvePlayerColor(playerColors, partySlotIndex, player.partyIndex)}>
+                <Text size="sm" c={resolvePlayerColor(playerColors, partySlotIndex, player.partyIndex, partyData)}>
                   {translatedPlayerName(partySlotIndex, partyData[partySlotIndex] ?? null, player, showDisplayNames)}
                 </Text>
                 <Progress.Root size="md" mt={4}>

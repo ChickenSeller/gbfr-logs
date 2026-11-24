@@ -173,7 +173,7 @@ export const buildOverlayState = (
     const partySlotIndex = partyData.findIndex((partyMember) => partyMember?.actorIndex === player.index);
     if (values.streamerMode && partySlotIndex !== 0) return [];
 
-    const color = resolvePlayerColor(partyColors, partySlotIndex, player.partyIndex);
+    const color = resolvePlayerColor(partyColors, partySlotIndex, player.partyIndex, partyData);
     return [
       {
         index: toCount(player.index),
@@ -288,7 +288,7 @@ const overlayDamageTaken = (
     return [
       {
         name: translatedPlayerName(partySlotIndex, partyData[partySlotIndex] ?? null, player, values.showDisplayNames),
-        color: hexToRgb(resolvePlayerColor(partyColors, partySlotIndex, player.partyIndex) ?? ""),
+        color: hexToRgb(resolvePlayerColor(partyColors, partySlotIndex, player.partyIndex, partyData) ?? ""),
         totalDamage: toCount(memberTaken?.totalDamage ?? 0),
         hits: toCount(memberTaken?.hits ?? 0),
         maxHit: toCount(memberTaken?.maxHit ?? 0),

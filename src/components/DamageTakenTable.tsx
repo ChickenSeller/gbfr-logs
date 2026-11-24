@@ -54,7 +54,7 @@ export const DamageTakenTable = ({ encounter, partyData, playerColors, showDispl
       <Table.Tbody>
         {rows.map((taken, i) => {
           const partySlotIndex = partyData.findIndex((member) => member?.actorIndex === taken.index);
-          const color = resolvePlayerColor(playerColors, partySlotIndex, i);
+          const color = resolvePlayerColor(playerColors, partySlotIndex, i, partyData);
           const sources = Object.values(taken.sources).sort((a, b) => b.totalDamage - a.totalDamage);
 
           return (

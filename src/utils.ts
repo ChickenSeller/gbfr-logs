@@ -214,11 +214,21 @@ export const translatedPlayerName = (
   return `[${partySlotData ? partySlotIndex + 1 : "Guest"}]` + " " + name;
 };
 
-/// Bar colour of a player: the configured colour of their party slot, or a fixed fallback
-/// for guests and slots past the four configurable ones.
-export const resolvePlayerColor = (partyColors: string[], partySlotIndex: number, partyIndex: number): string => {
-  const playerColors = [...partyColors, "#9BCF53", "#380E7F", "#416D19", "#2C568D"];
-  return partySlotIndex !== -1 ? playerColors[partySlotIndex] : playerColors[partyIndex];
+/// Bar colour of a player: the configured colour of their party slot. A player without a slot
+/// yet (a guest, or a member the app has not matched yet) takes the colour of the slot at their
+/// place in the party when nobody holds that slot, and otherwise one of the fallback colours, so
+/// they never share a colour with a member who has a slot.
+export const resolvePlayerColor = (
+  partyColors: string[],
+  partySlotIndex: number,
+  partyIndex: number,
+  partyData: (PlayerData | null | undefined)[] = []
+): string => {
+  const fallbacks = ["#9BCF53", "#380E7F", "#416D19", "#2C568D"];
+  const playerColors = [...partyColors, ...fallbacks];
+  if (partySlotIndex !== -1) return playerColors[partySlotIndex];
+  if (partyIndex < partyColors.length && !partyData[partyIndex]) return playerColors[partyIndex];
+  return fallbacks[partyIndex % fallbacks.length];
 };
 
 export const sortPlayers = (players: ComputedPlayerState[], sortType: SortType, sortDirection: SortDirection) => {

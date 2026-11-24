@@ -87,7 +87,7 @@ export const combatLogMember = (context: CombatLogContext, index: number, charac
   const fallbackOrder = [...context.characters.keys()].sort((a, b) => a - b).indexOf(index);
   return {
     name: translatedPlayerName(slot, context.partyData[slot] ?? null, playerOf(index, type), context.showDisplayNames),
-    color: resolvePlayerColor(context.partyColors, slot, Math.max(0, fallbackOrder)) ?? "#ffffff",
+    color: resolvePlayerColor(context.partyColors, slot, Math.max(0, fallbackOrder), context.partyData) ?? "#ffffff",
   };
 };
 
