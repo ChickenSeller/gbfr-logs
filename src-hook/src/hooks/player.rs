@@ -582,8 +582,14 @@ fn read_actor_identity(actor: *const usize) -> Option<StoredPlayerIdentity> {
             .wrapping_byte_add(ACTOR_IDENTITY_SNAPSHOT_OFFSET)
             .cast::<*const u8>(),
     )?;
-    let identity = read_player_identity(snapshot)?;
-    should_cache_identity(&identity).then_some(identity)
+    let mut identity = read_player_identity(snapshot)?;
+    if !should_cache_identity(&identity) {
+        // AI supporters (offline, slots 2-4) carry a placeholder name (the local profile's or
+        // "Party n"); they are still party members with their own slot and loadout, so they are
+        // reported, named by their character only.
+        identity.display_name = CString::default();
+    }
+    Some(identity)
 }
 
 fn read_player_identity(snapshot: *const u8) -> Option<StoredPlayerIdentity> {
