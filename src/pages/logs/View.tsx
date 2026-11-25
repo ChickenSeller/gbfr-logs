@@ -706,8 +706,10 @@ export const ViewPage = () => {
                             {createWeaponStars(player.weaponInfo?.starLevel || 0)}
                           </Text>
                           <Text size="xs" fs="italic" fw={300}>
-                            {t([`weapons:${toHashString(player.weaponInfo?.weaponId)}.text`, "unknown"])} +
-                            {player.weaponInfo?.plusMarks}
+                            {/* No loadout was recorded for this member: no name, no "+". */}
+                            {player.weaponInfo
+                              ? `${t([`weapons:${toHashString(player.weaponInfo.weaponId)}.text`, "unknown"])} +${player.weaponInfo.plusMarks}`
+                              : "-"}
                           </Text>
                           <Text size="xs" fs="italic" fw={300}>
                             {t("ui.player-awakening")} {player.weaponInfo?.awakeningLevel || 0}/10

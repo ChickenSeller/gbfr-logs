@@ -179,12 +179,15 @@ impl OnProcessDamageHook {
             source_parent_idx,
         );
         for identity in identities {
-            // The loadout travels with each new identity, as the pre-2.0 load event did.
-            let load = super::player::load_event_for_actor(identity_actor, &identity);
             let _ = self.tx.send(Message::PlayerIdentityEvent(identity));
-            if let Some(load) = load {
-                let _ = self.tx.send(Message::PlayerLoadEvent(load));
-            }
+        }
+        // The loadout follows once it can be read, even if the identity went out earlier.
+        if let Some(load) = super::player::pending_load_event(
+            identity_actor,
+            source_parent_type_id,
+            source_parent_idx,
+        ) {
+            let _ = self.tx.send(Message::PlayerLoadEvent(load));
         }
 
         // Party members' hits, for the debug view.
@@ -359,12 +362,15 @@ impl OnProcessDotHook {
             source_parent_idx,
         );
         for identity in identities {
-            // The loadout travels with each new identity, as the pre-2.0 load event did.
-            let load = super::player::load_event_for_actor(identity_actor, &identity);
             let _ = self.tx.send(Message::PlayerIdentityEvent(identity));
-            if let Some(load) = load {
-                let _ = self.tx.send(Message::PlayerLoadEvent(load));
-            }
+        }
+        // The loadout follows once it can be read, even if the identity went out earlier.
+        if let Some(load) = super::player::pending_load_event(
+            identity_actor,
+            source_parent_type_id,
+            source_parent_idx,
+        ) {
+            let _ = self.tx.send(Message::PlayerLoadEvent(load));
         }
 
         let target_idx = actor_idx(target);

@@ -164,6 +164,46 @@ pub(super) fn reset_emitted_identity_state() {
             .expect("emitted actor identity map lock poisoned")
             .clear();
     }
+    LOADS_SENT.lock().unwrap_or_else(|e| e.into_inner()).clear();
+}
+
+/// Actors whose loadout was sent, as (actor, character type, actor index).
+static LOADS_SENT: Mutex<Vec<(usize, u32, u32)>> = Mutex::new(Vec::new());
+/// Id's dragon form: its own actor, with a placeholder loadout (level 1, no weapon).
+const ID_DRAGON_TYPE: u32 = 0xF575_5C0E;
+
+/// The loadout of a party member who dealt damage, until one has been sent for them.
+///
+/// It is tried on every hit rather than only with a new identity: a member first seen while
+/// their loadout was not readable yet (an AI supporter first acting in another form, a loadout
+/// still loading) would otherwise never get one.
+pub fn pending_load_event(
+    actor: *const usize,
+    character_type: u32,
+    actor_index: u32,
+) -> Option<protocol::PlayerLoadEvent> {
+    if actor.is_null() || character_type == ID_DRAGON_TYPE {
+        return None;
+    }
+    let key = (actor as usize, character_type, actor_index);
+    if LOADS_SENT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&key)
+    {
+        return None;
+    }
+    let identity = identity_event(read_actor_identity(actor)?, character_type, actor_index);
+    let load = load_event_for_actor(actor, &identity)?;
+    LOADS_SENT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(key);
+    info!(
+        "Loadout sent: actor_index={actor_index}, type={character_type:#010x}, party={}",
+        identity.party_index
+    );
+    Some(load)
 }
 
 #[derive(Clone)]

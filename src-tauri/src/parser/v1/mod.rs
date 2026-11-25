@@ -1041,7 +1041,15 @@ impl Parser {
             player_stats: Some(event.player_stats.into()),
         };
 
-        self.insert_player_data(player_data, event.party_index);
+        // The hook sends each loadout with the member's verified party slot, the same as its
+        // identity, so it goes to that slot. Ordering by actor index instead shifted the slots
+        // identities had already filled, pushing one member out; their next identity then came
+        // back without a loadout (Id or Thorn as AI supporters showed none).
+        if usize::from(event.party_index) < self.encounter.player_data.len() {
+            self.insert_player_identity_data(player_data, event.party_index);
+        } else {
+            self.insert_player_data(player_data, event.party_index);
+        }
     }
 
     fn insert_player_identity_data(&mut self, player_data: PlayerData, party_index: u8) {
