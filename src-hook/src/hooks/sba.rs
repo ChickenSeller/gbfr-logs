@@ -345,3 +345,96 @@ impl OnRemoteSBAUpdateHook {
         ret
     }
 }
+
+/// The SBA gauge on game 2.0.2, read rather than hooked (the update function's signature no
+/// longer matches): an f32 at +0x80 of the member's `ExPlayerPoint`, 0 to 1000, with its maximum
+/// at +0x84. Seen in a fight's timeline: it fills with each hit, drops from 1000 to 800 when the
+/// SBA is started and to 0 when it lands; the same for AI supporters, and Id's dragon form
+/// mirrors Id.
+pub mod gauge {
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    use protocol::Message;
+
+    use crate::event;
+    use crate::hooks::read_process_value;
+
+    const POINT_CLASS: &str = "ExPlayerPoint";
+    const VALUE: usize = 0x80;
+    const MAXIMUM: usize = 0x84;
+    const INTERVAL: Duration = Duration::from_millis(100);
+    /// Id's dragon form: its gauge is Id's, reported under Id.
+    const DRAGON_TYPE: u32 = 0xF575_5C0E;
+
+    fn read(instance: usize) -> Option<f32> {
+        let base = instance + crate::hooks::rtti::base_offset(instance, POINT_CLASS)?;
+        let value = read_process_value::<f32>((base + VALUE) as *const f32)?;
+        let maximum = read_process_value::<f32>((base + MAXIMUM) as *const f32)?;
+        (maximum > 0.0 && maximum <= 10_000.0 && (0.0..=maximum).contains(&value))
+            .then_some(value)
+    }
+
+    /// What a change of the gauge from `before` to `now` reports.
+    pub(super) fn event(actor_index: u32, before: Option<f32>, now: f32) -> Option<Message> {
+        match before {
+            Some(before) if (before - now).abs() < 0.01 => None,
+            Some(before) if now <= 0.0 && before > 0.0 => {
+                Some(Message::OnPerformSBA(protocol::OnPerformSBAEvent { actor_index }))
+            }
+            // Spent at the start of the SBA (1000 -> 800), before it lands.
+            Some(before) if now < before && now > 0.0 => {
+                Some(Message::OnAttemptSBA(protocol::OnAttemptSBAEvent { actor_index }))
+            }
+            _ => Some(Message::OnUpdateSBA(protocol::OnUpdateSBAEvent {
+                actor_index,
+                sba_value: now,
+                sba_added: (now - before.unwrap_or(now)).max(0.0),
+            })),
+        }
+    }
+
+    pub fn setup(tx: event::Tx) {
+        crate::shutdown::spawn(move || {
+            let mut last: HashMap<u32, f32> = HashMap::new();
+            while crate::shutdown::sleep(INTERVAL) {
+                let members = crate::hooks::statuses::party_members();
+                // A new encounter (members forgotten at the result screen): start afresh.
+                last.retain(|index, _| members.iter().any(|(i, _, _)| i == index));
+                for (index, actor_type, instance) in members {
+                    if actor_type == DRAGON_TYPE {
+                        continue;
+                    }
+                    let Some(now) = read(instance) else {
+                        continue;
+                    };
+                    if let Some(message) = event(index, last.get(&index).copied(), now) {
+                        let _ = tx.send(message);
+                    }
+                    last.insert(index, now);
+                }
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gauge::event;
+    use protocol::Message;
+
+    #[test]
+    fn gauge_changes_become_sba_events() {
+        assert!(event(1, Some(500.0), 500.0).is_none());
+        assert!(matches!(
+            event(1, Some(400.0), 450.0),
+            Some(Message::OnUpdateSBA(e)) if e.sba_value == 450.0 && e.sba_added == 50.0
+        ));
+        assert!(matches!(event(1, Some(1000.0), 800.0), Some(Message::OnAttemptSBA(_))));
+        assert!(matches!(event(1, Some(800.0), 0.0), Some(Message::OnPerformSBA(_))));
+        assert!(matches!(
+            event(1, None, 300.0),
+            Some(Message::OnUpdateSBA(e)) if e.sba_added == 0.0
+        ));
+    }
+}

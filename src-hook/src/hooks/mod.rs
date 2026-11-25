@@ -98,6 +98,8 @@ pub fn setup_hooks(tx: event::Tx) -> Result<()> {
 
     timeline::setup(process.base_address);
     statuses::setup(process.base_address, tx.clone());
+    sba::gauge::setup(tx.clone());
+    info!("SBA gauge polling enabled");
     boss_trace::setup();
 
     // Core DPS tracking. The main damage signature is still stable in game 2.0.2.

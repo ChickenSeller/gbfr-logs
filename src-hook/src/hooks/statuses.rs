@@ -350,6 +350,23 @@ pub fn party_instances() -> Vec<(u32, usize)> {
         .collect()
 }
 
+/// Tracked party members as (actor index, character type, acting instance).
+pub fn party_members() -> Vec<(u32, u32, usize)> {
+    let types: Vec<(u32, u32)> = ACTORS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .map(|actor| (actor.actor_index, actor.actor_type))
+        .collect();
+    party_instances()
+        .into_iter()
+        .filter_map(|(index, instance)| {
+            let (_, actor_type) = types.iter().find(|(i, _)| *i == index)?;
+            Some((index, *actor_type, instance))
+        })
+        .collect()
+}
+
 /// RTTI class name of a vtable, for the diagnostics export.
 pub fn class_name_of_vtable(vtable: usize) -> Option<String> {
     class_name(vtable)
