@@ -28,6 +28,8 @@ use super::read_process_value;
 
 /// Timeline files kept; older ones are deleted when a session starts.
 const KEEP: usize = 5;
+/// A file this small holds only its `start` line.
+const EMPTY_BYTES: u64 = 64;
 /// A session's file stops growing here; enemy scans stop first, at `ENEMY_LIMIT`.
 const FILE_LIMIT: u64 = 96 << 20;
 const ENEMY_LIMIT: u64 = 64 << 20;
@@ -100,6 +102,15 @@ fn open() -> Option<Writer> {
             .map(|entry| entry.path())
             .filter(|path| path.extension().is_some_and(|e| e == "jsonl"))
             .collect();
+        // Sessions that recorded nothing (the game opened without a fight) go first, so they
+        // never push out one that did: five such sessions once lost the only SBA gauge data.
+        files.retain(|path| {
+            let empty = std::fs::metadata(path).is_ok_and(|m| m.len() <= EMPTY_BYTES);
+            if empty {
+                let _ = std::fs::remove_file(path);
+            }
+            !empty
+        });
         // Names start with the start time, so name order is age order.
         files.sort();
         while files.len() >= KEEP {

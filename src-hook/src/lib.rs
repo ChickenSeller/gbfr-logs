@@ -145,8 +145,12 @@ fn initialize_logger() -> anyhow::Result<()> {
     let data_dir = protocol::paths::data_dir().context("Could not find data folder")?;
     std::fs::create_dir_all(&data_dir)?;
     let log_file = data_dir.join(protocol::paths::HOOK_LOG_FILE);
+    // Started afresh when it grew big; the previous one is kept once, as `.old`.
+    if std::fs::metadata(&log_file).is_ok_and(|m| m.len() > MAX_LOG_BYTES) {
+        let _ = std::fs::rename(&log_file, log_file.with_extension("old.txt"));
+    }
 
-    fern::Dispatch::new()
+    let (level, log) = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "[{} {}] {}",
@@ -157,9 +161,66 @@ fn initialize_logger() -> anyhow::Result<()> {
         })
         .level(log::LevelFilter::Info)
         .chain(fern::log_file(log_file)?)
-        .apply()?;
+        .into_log();
+    log::set_boxed_logger(Box::new(Quieted {
+        inner: log,
+        last: std::sync::Mutex::new(None),
+    }))?;
+    log::set_max_level(level);
 
     Ok(())
+}
+
+/// The hook log starts again past this size.
+const MAX_LOG_BYTES: u64 = 32 * 1024 * 1024;
+/// How often a message the overlay library repeats every frame is written again.
+const REPEAT_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The log, with hudhook's per-frame errors (e.g. "Insufficient display size" on every frame
+/// while the game is minimised, which filled the log with millions of lines) written once a
+/// minute, with how many were left out.
+struct Quieted {
+    inner: Box<dyn log::Log>,
+    /// The last hudhook message, when it was last written and how many repeats were left out.
+    last: std::sync::Mutex<Option<(String, std::time::Instant, u64)>>,
+}
+
+impl log::Log for Quieted {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        self.inner.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record) {
+        if record.target().starts_with("hudhook") {
+            let text = format!("{}", record.args());
+            let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((previous, at, skipped)) = last.as_mut() {
+                // Render errors alternate with their cause: either counts as a repeat.
+                let repeat = *previous == text
+                    || (text.starts_with("Render error") && previous.starts_with("Insufficient"))
+                    || (previous.starts_with("Render error") && text.starts_with("Insufficient"));
+                if repeat && at.elapsed() < REPEAT_EVERY {
+                    *skipped += 1;
+                    return;
+                }
+                if *skipped > 0 {
+                    self.inner.log(
+                        &log::Record::builder()
+                            .level(log::Level::Info)
+                            .target("hook")
+                            .args(format_args!("({skipped} repeated overlay messages left out)"))
+                            .build(),
+                    );
+                }
+            }
+            *last = Some((text, std::time::Instant::now(), 0));
+        }
+        self.inner.log(record);
+    }
+
+    fn flush(&self) {
+        self.inner.flush();
+    }
 }
 
 #[ctor::ctor]
