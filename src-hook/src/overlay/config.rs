@@ -44,6 +44,78 @@ pub struct OverlayConfig {
     pub debug_view: bool,
     /// What the debug view draws.
     pub debug: DebugViewConfig,
+    /// The display the window positions were saved on; they are scaled when the game runs at
+    /// another size. `None` in settings saved before it was kept.
+    pub layout_display: Option<[f32; 2]>,
+}
+
+impl OverlayConfig {
+    /// Scales the saved positions and window sizes to `display` when it differs from the display
+    /// they were laid out on. Returns whether anything moved.
+    ///
+    /// Settings from before `layout_display` was kept are taken as laid out on this display when
+    /// every window fits on it whole, otherwise on the reference display the defaults use.
+    pub fn adapt_to_display(&mut self, display: [f32; 2]) -> bool {
+        if display[0] <= 0.0 || display[1] <= 0.0 {
+            return false;
+        }
+        // Each window's saved corner and roughly its size (the smallest it is drawn at).
+        let windows = [
+            (
+                self.meter.position,
+                [self.meter.width * self.meter.scale, 60.0],
+            ),
+            (
+                self.enemy_hp.position,
+                [self.enemy_hp.width * self.enemy_hp.scale, 40.0],
+            ),
+            (
+                self.damage_taken.position,
+                [self.damage_taken.width * self.damage_taken.scale, 40.0],
+            ),
+            (
+                self.combat_log.position,
+                [
+                    self.combat_log.width * self.combat_log.scale,
+                    self.combat_log.height * self.combat_log.scale,
+                ],
+            ),
+        ];
+        let layout = self.layout_display.unwrap_or_else(|| {
+            let fits = windows.iter().all(|(position, size)| {
+                position.map_or(true, |p| {
+                    p[0] + size[0] <= display[0] && p[1] + size[1] <= display[1]
+                })
+            });
+            if fits {
+                display
+            } else {
+                super::placement::REFERENCE_DISPLAY
+            }
+        });
+        self.layout_display = Some(display);
+        if (layout[0] - display[0]).abs() < 1.0 && (layout[1] - display[1]).abs() < 1.0 {
+            return false;
+        }
+        let [sx, sy] = [display[0] / layout[0], display[1] / layout[1]];
+        let scale_position = |position: &mut Option<[f32; 2]>| {
+            if let Some(p) = position.as_mut() {
+                *p = [p[0] * sx, p[1] * sy];
+            }
+        };
+        scale_position(&mut self.meter.position);
+        scale_position(&mut self.enemy_hp.position);
+        scale_position(&mut self.damage_taken.position);
+        scale_position(&mut self.combat_log.position);
+        scale_position(&mut self.menu_position);
+        // Sizes follow the height, so the windows keep their share of the screen.
+        let scale = |value: f32| clamp_or(value * sy, METER_SCALE_RANGE, value);
+        self.meter.scale = scale(self.meter.scale);
+        self.enemy_hp.scale = scale(self.enemy_hp.scale);
+        self.damage_taken.scale = scale(self.damage_taken.scale);
+        self.combat_log.scale = scale(self.combat_log.scale);
+        true
+    }
 }
 
 /// Parts of the debug view, each shown or hidden on its own.
@@ -102,6 +174,7 @@ impl Default for OverlayConfig {
             menu_position: None,
             debug_view: false,
             debug: DebugViewConfig::default(),
+            layout_display: None,
         }
     }
 }
@@ -367,6 +440,41 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let loaded: OverlayConfig = serde_json::from_str(&json).unwrap();
         assert!(loaded.debug_view);
+    }
+
+    #[test]
+    fn layout_follows_the_display() {
+        // Laid out on 2560x1600 (an older file without `layout_display`: the meter lies off a
+        // 1080p screen), then shown at 1920x1080.
+        let mut config = OverlayConfig::default();
+        config.meter.position = Some([1065.0, 1449.0]);
+        config.meter.scale = 1.0;
+        assert!(config.adapt_to_display([1920.0, 1080.0]));
+        let [x, y] = config.meter.position.unwrap();
+        assert!((x - 798.75).abs() < 0.01 && (y - 978.075).abs() < 0.01);
+        assert!((config.meter.scale - 0.675).abs() < 0.001);
+        assert_eq!(config.layout_display, Some([1920.0, 1080.0]));
+        // Same display again: nothing moves.
+        assert!(!config.adapt_to_display([1920.0, 1080.0]));
+    }
+
+    #[test]
+    fn older_layouts_that_fit_are_kept() {
+        let mut config = OverlayConfig::default();
+        config.meter.position = Some([400.0, 700.0]);
+        assert!(!config.adapt_to_display([1920.0, 1080.0]));
+        assert_eq!(config.meter.position, Some([400.0, 700.0]));
+    }
+
+    #[test]
+    fn older_layouts_are_judged_by_whole_windows() {
+        // Every corner lies on 1920x1080, but the meter's bottom and the damage taken window's
+        // right side do not: laid out on the larger reference display.
+        let mut config = OverlayConfig::default();
+        config.meter.position = Some([1065.0, 1040.0]);
+        config.damage_taken.position = Some([1864.0, 9.0]);
+        assert!(config.adapt_to_display([1920.0, 1080.0]));
+        assert!(config.meter.position.unwrap()[1] < 1040.0 * 0.7);
     }
 
     #[test]

@@ -7,18 +7,24 @@ use super::config::CombatLogConfig;
 
 /// Default layout: a row along the top edge, after the enemy HP window.
 const DEFAULT_POSITION: [f32; 2] = [875.0, 25.0];
-const MIN_VISIBLE: [f32; 2] = [80.0, 30.0];
 const MIN_INTERACTIVE_ALPHA: f32 = 0.6;
 const TIME_COLOR: [f32; 4] = [0.65, 0.65, 0.65, 1.0];
 
 #[derive(Default)]
 pub struct CombatLogWindow {
     reset_position: bool,
+    /// Its size and the display it was placed on, to keep it on screen at any resolution.
+    placement: super::placement::Placement,
     /// Text of the newest line drawn, to scroll down when a new one arrives.
     last_line: Option<(String, String)>,
 }
 
 impl CombatLogWindow {
+    /// Places the window again on the next frame, after its saved position was scaled.
+    pub fn replace(&mut self) {
+        self.placement.replace();
+    }
+
     pub fn reset_position(&mut self) {
         self.reset_position = true;
     }
@@ -42,15 +48,15 @@ impl CombatLogWindow {
         if !interactive {
             flags |= WindowFlags::NO_INPUTS;
         }
+        let display = ui.io().display_size;
+        let default = super::placement::scaled_default(DEFAULT_POSITION, display);
         let (position, condition) = if std::mem::take(&mut self.reset_position) {
             config.position = None;
-            (DEFAULT_POSITION, Condition::Always)
+            self.placement.replace();
+            (default, Condition::Always)
         } else {
-            let saved = config.position.unwrap_or(DEFAULT_POSITION);
-            (
-                on_screen(saved, ui.io().display_size),
-                Condition::FirstUseEver,
-            )
+            self.placement
+                .place(config.position.unwrap_or(default), display)
         };
         let alpha = if interactive {
             transparency.max(MIN_INTERACTIVE_ALPHA)
@@ -64,6 +70,7 @@ impl CombatLogWindow {
         let has_new_line = newest != self.last_line;
         self.last_line = newest;
 
+        let mut window_size = [0.0, 0.0];
         ui.window("GBFR Logs 战斗日志")
             .position(position, condition)
             .bg_alpha(alpha.clamp(0.0, 1.0))
@@ -98,24 +105,18 @@ impl CombatLogWindow {
                             ui.set_scroll_here_y_with_ratio(1.0);
                         }
                     });
+                window_size = ui.window_size();
                 if interactive {
                     config.position = Some(ui.window_pos());
                 }
             });
+        if window_size[0] > 0.0 {
+            self.placement.set_size(window_size);
+        }
     }
 }
 
 fn rgb(color: u32) -> [f32; 4] {
     let [_, r, g, b] = color.to_be_bytes();
     [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
-}
-
-fn on_screen(position: [f32; 2], display: [f32; 2]) -> [f32; 2] {
-    if display[0] <= 0.0 || display[1] <= 0.0 {
-        return position;
-    }
-    [
-        position[0].clamp(0.0, (display[0] - MIN_VISIBLE[0]).max(0.0)),
-        position[1].clamp(0.0, (display[1] - MIN_VISIBLE[1]).max(0.0)),
-    ]
 }

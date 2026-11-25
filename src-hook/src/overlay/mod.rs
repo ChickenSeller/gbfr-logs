@@ -27,6 +27,7 @@ mod hotkey;
 mod keyboard;
 mod message_loop;
 mod meter;
+mod placement;
 mod settings_menu;
 
 /// Presence of this file in the log directory disables the overlay at startup, so users can
@@ -709,6 +710,16 @@ impl ImguiRenderLoop for OverlayRenderLoop {
 
     fn render(&mut self, ui: &mut imgui::Ui) {
         feed::refresh(&mut self.snapshot);
+
+        // Another resolution than the windows were laid out for: scale their positions and sizes
+        // (saved with the rest of the settings) and place them again.
+        if self.config.adapt_to_display(ui.io().display_size) {
+            info!("Overlay layout scaled to {:?}", ui.io().display_size);
+            self.meter.replace();
+            self.enemy_hp.replace();
+            self.damage_taken.replace();
+            self.combat_log.replace();
+        }
 
         if self.config.show_meter {
             let state = self.snapshot.as_ref().map(|snapshot| &snapshot.state);

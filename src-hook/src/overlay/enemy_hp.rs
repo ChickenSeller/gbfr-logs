@@ -10,7 +10,6 @@ use crate::hooks::enemy_hp::{self, EnemyHp, PartState};
 
 /// Default layout: a row along the top edge, right of the settings menu.
 const DEFAULT_POSITION: [f32; 2] = [470.0, 25.0];
-const MIN_VISIBLE: [f32; 2] = [80.0, 30.0];
 const MIN_INTERACTIVE_ALPHA: f32 = 0.6;
 const PADDING: f32 = 6.0;
 
@@ -29,9 +28,16 @@ const LOW_HP_RATIO: f32 = 0.3;
 #[derive(Default)]
 pub struct EnemyHpWindow {
     reset_position: bool,
+    /// Its size and the display it was placed on, to keep it on screen at any resolution.
+    placement: super::placement::Placement,
 }
 
 impl EnemyHpWindow {
+    /// Places the window again on the next frame, after its saved position was scaled.
+    pub fn replace(&mut self) {
+        self.placement.replace();
+    }
+
     pub fn reset_position(&mut self) {
         self.reset_position = true;
     }
@@ -60,15 +66,15 @@ impl EnemyHpWindow {
         if !interactive {
             flags |= WindowFlags::NO_INPUTS;
         }
+        let display = ui.io().display_size;
+        let default = super::placement::scaled_default(DEFAULT_POSITION, display);
         let (position, condition) = if std::mem::take(&mut self.reset_position) {
             config.position = None;
-            (DEFAULT_POSITION, Condition::Always)
+            self.placement.replace();
+            (default, Condition::Always)
         } else {
-            let saved = config.position.unwrap_or(DEFAULT_POSITION);
-            (
-                on_screen(saved, ui.io().display_size),
-                Condition::FirstUseEver,
-            )
+            self.placement
+                .place(config.position.unwrap_or(default), display)
         };
         let alpha = if interactive {
             transparency.max(MIN_INTERACTIVE_ALPHA)
@@ -76,6 +82,7 @@ impl EnemyHpWindow {
             transparency
         };
 
+        let mut window_size = [0.0, 0.0];
         ui.window("GBFR Logs 敌人血量")
             .position(position, condition)
             .bg_alpha(alpha.clamp(0.0, 1.0))
@@ -95,10 +102,14 @@ impl EnemyHpWindow {
                 for enemy in shown {
                     draw_enemy(ui, config, enemy, names.get(&enemy.type_hash).copied());
                 }
+                window_size = ui.window_size();
                 if interactive {
                     config.position = Some(ui.window_pos());
                 }
             });
+        if window_size[0] > 0.0 {
+            self.placement.set_size(window_size);
+        }
     }
 }
 
@@ -231,16 +242,6 @@ pub fn group_digits(value: i64) -> String {
         out.push(ch);
     }
     out
-}
-
-fn on_screen(position: [f32; 2], display: [f32; 2]) -> [f32; 2] {
-    if display[0] <= 0.0 || display[1] <= 0.0 {
-        return position;
-    }
-    [
-        position[0].clamp(0.0, (display[0] - MIN_VISIBLE[0]).max(0.0)),
-        position[1].clamp(0.0, (display[1] - MIN_VISIBLE[1]).max(0.0)),
-    ]
 }
 
 #[cfg(test)]

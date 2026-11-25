@@ -24,8 +24,6 @@ use super::feed;
 use crate::event;
 
 const DEFAULT_POSITION: [f32; 2] = [1075.0, 1449.0];
-/// Part of the window that must stay on screen when restoring a saved position.
-const MIN_VISIBLE: [f32; 2] = [80.0, 40.0];
 /// Background opacity while the menu is open, so the window is easy to find and drag.
 const MIN_INTERACTIVE_ALPHA: f32 = 0.6;
 
@@ -85,6 +83,8 @@ pub struct MeterWindow {
     tx: event::Tx,
     /// Moves the window back to its default position on the next frame.
     reset_position: bool,
+    /// Its size and the display it was placed on, to keep it on screen at any resolution.
+    placement: super::placement::Placement,
     expanded_players: HashSet<u32>,
     expanded_groups: HashSet<(u32, String)>,
 }
@@ -105,9 +105,15 @@ impl MeterWindow {
         Self {
             tx,
             reset_position: false,
+            placement: Default::default(),
             expanded_players: HashSet::new(),
             expanded_groups: HashSet::new(),
         }
+    }
+
+    /// Places the window again on the next frame, after its saved position was scaled.
+    pub fn replace(&mut self) {
+        self.placement.replace();
     }
 
     pub fn reset_position(&mut self) {
@@ -136,15 +142,15 @@ impl MeterWindow {
             flags |= WindowFlags::NO_INPUTS;
         }
 
+        let display = ui.io().display_size;
+        let default = super::placement::scaled_default(DEFAULT_POSITION, display);
         let (position, condition) = if std::mem::take(&mut self.reset_position) {
             config.position = None;
-            (DEFAULT_POSITION, Condition::Always)
+            self.placement.replace();
+            (default, Condition::Always)
         } else {
-            let saved = config.position.unwrap_or(DEFAULT_POSITION);
-            (
-                on_screen(saved, ui.io().display_size),
-                Condition::FirstUseEver,
-            )
+            self.placement
+                .place(config.position.unwrap_or(default), display)
         };
         let configured_alpha = view.map_or(0.35, |view| view.values.transparency);
         let alpha = if interactive {
@@ -153,6 +159,7 @@ impl MeterWindow {
             configured_alpha
         };
 
+        let mut window_size = [0.0, 0.0];
         ui.window("GBFR Logs 伤害统计")
             .position(position, condition)
             .bg_alpha(alpha.clamp(0.0, 1.0))
@@ -192,10 +199,14 @@ impl MeterWindow {
                     };
                     ui.text_colored(color, notice.text);
                 }
+                window_size = ui.window_size();
                 if interactive {
                     config.position = Some(ui.window_pos());
                 }
             });
+        if window_size[0] > 0.0 {
+            self.placement.set_size(window_size);
+        }
     }
 
     /// The desktop title bar: app name, team damage and DPS, then the timer and copy menu.
@@ -863,17 +874,6 @@ fn draw_clipboard_icon(draw_list: &DrawListMut<'_>, [x, y]: [f32; 2], size: f32,
     }
 }
 
-/// Pulls a saved position back on screen, e.g. after switching to a smaller resolution.
-fn on_screen(position: [f32; 2], display: [f32; 2]) -> [f32; 2] {
-    if display[0] <= 0.0 || display[1] <= 0.0 {
-        return position;
-    }
-    [
-        position[0].clamp(0.0, (display[0] - MIN_VISIBLE[0]).max(0.0)),
-        position[1].clamp(0.0, (display[1] - MIN_VISIBLE[1]).max(0.0)),
-    ]
-}
-
 /// Trims `text` with an ellipsis so it fits `max_width`.
 fn fit_text(ui: &Ui, text: &str, max_width: f32) -> String {
     if ui.calc_text_size(text)[0] <= max_width {
@@ -997,15 +997,6 @@ mod tests {
             skill_cells(&skill, true),
             ["4", "10,000", "1,000", "", "2,500", "25%"].map(String::from)
         );
-    }
-
-    #[test]
-    fn saved_positions_are_kept_on_screen() {
-        let display = [1920.0, 1080.0];
-        assert_eq!(on_screen([100.0, 200.0], display), [100.0, 200.0]);
-        assert_eq!(on_screen([3000.0, -50.0], display), [1840.0, 0.0]);
-        // Without a known display size the position is left alone.
-        assert_eq!(on_screen([3000.0, 10.0], [0.0, 0.0]), [3000.0, 10.0]);
     }
 
     #[test]

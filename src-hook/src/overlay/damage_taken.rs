@@ -9,7 +9,6 @@ use super::enemy_hp::group_digits;
 /// Until the player moves it, the window hugs the top-right corner: its right edge stays put and
 /// it grows to the left, so the debuff column never covers the windows beside it.
 const DEFAULT_MARGIN: [f32; 2] = [25.0, 25.0];
-const MIN_VISIBLE: [f32; 2] = [80.0, 30.0];
 const MIN_INTERACTIVE_ALPHA: f32 = 0.6;
 const PADDING: f32 = 6.0;
 const TRACK_COLOR: ImColor32 = ImColor32::from_rgba(0, 0, 0, 140);
@@ -25,9 +24,16 @@ const DEBUFF_COLUMN_GAP: f32 = 14.0;
 #[derive(Default)]
 pub struct DamageTakenWindow {
     reset_position: bool,
+    /// Its size and the display it was placed on, to keep it on screen at any resolution.
+    placement: super::placement::Placement,
 }
 
 impl DamageTakenWindow {
+    /// Places the window again on the next frame, after its saved position was scaled.
+    pub fn replace(&mut self) {
+        self.placement.replace();
+    }
+
     pub fn reset_position(&mut self) {
         self.reset_position = true;
     }
@@ -63,11 +69,10 @@ impl DamageTakenWindow {
                 [1.0, 0.0],
                 Condition::Always,
             ),
-            Some(saved) => (
-                on_screen(saved, display),
-                [0.0, 0.0],
-                Condition::FirstUseEver,
-            ),
+            Some(saved) => {
+                let (position, condition) = self.placement.place(saved, display);
+                (position, [0.0, 0.0], condition)
+            }
         };
         let alpha = if interactive {
             transparency.max(MIN_INTERACTIVE_ALPHA)
@@ -75,6 +80,7 @@ impl DamageTakenWindow {
             transparency
         };
 
+        let mut window_size = [0.0, 0.0];
         ui.window("GBFR Logs 承受伤害")
             .position(position, condition)
             .position_pivot(pivot)
@@ -185,21 +191,15 @@ impl DamageTakenWindow {
                     }
                     ui.dummy([width, PADDING * 0.5]);
                 }
+                window_size = ui.window_size();
                 // Only a drag places it; otherwise it keeps following the right edge.
                 if interactive && ui.is_window_focused() && ui.is_mouse_dragging(MouseButton::Left)
                 {
                     config.position = Some(ui.window_pos());
                 }
             });
+        if window_size[0] > 0.0 {
+            self.placement.set_size(window_size);
+        }
     }
-}
-
-fn on_screen(position: [f32; 2], display: [f32; 2]) -> [f32; 2] {
-    if display[0] <= 0.0 || display[1] <= 0.0 {
-        return position;
-    }
-    [
-        position[0].clamp(0.0, (display[0] - MIN_VISIBLE[0]).max(0.0)),
-        position[1].clamp(0.0, (display[1] - MIN_VISIBLE[1]).max(0.0)),
-    ]
 }
