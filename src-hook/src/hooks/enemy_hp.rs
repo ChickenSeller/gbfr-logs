@@ -59,6 +59,8 @@ pub struct EnemyHp {
     pub max_hp: i64,
     /// Breakable parts, in memory order.
     pub parts: Vec<PartState>,
+    /// The game's class name (`Em8000`, `We7300`), for enemies the game has no name for.
+    pub class: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -369,6 +371,10 @@ struct Tracked {
     /// map, too slow for every hit).
     break_parts: Option<usize>,
     parts: Vec<PartState>,
+    /// RTTI class name, e.g. `Em8000` or `We8091`.
+    class: Option<String>,
+    /// Whether it ever lost HP.
+    damaged: bool,
 }
 
 static TRACKED: Mutex<Vec<Tracked>> = Mutex::new(Vec::new());
@@ -419,6 +425,7 @@ pub fn observe(instance: usize, type_hash: u32) -> Option<PartBreak> {
             entry.defeated_at = None;
         }
         entry.hp = hp;
+        entry.damaged |= hp < max_hp;
         entry.last_hit = now;
         entry.last_seen = now;
         let before = std::mem::take(&mut entry.parts);
@@ -485,6 +492,8 @@ fn track(
         part_offsets,
         break_parts,
         parts,
+        class: super::statuses::class_name(vtable),
+        damaged: hp < max_hp,
     });
 }
 
@@ -564,6 +573,7 @@ pub fn snapshot() -> Vec<EnemyHp> {
             return false;
         }
         entry.hp = hp;
+        entry.damaged |= hp < max_hp;
         let previous = std::mem::take(&mut entry.parts);
         entry.parts = current_parts(
             entry.instance,
@@ -579,7 +589,13 @@ pub fn snapshot() -> Vec<EnemyHp> {
         now.duration_since(entry.last_seen) < IDLE_TIMEOUT
     });
 
-    let mut order: Vec<&Tracked> = tracked.iter().collect();
+    // `We*` objects that never lose HP are not enemies of their own: on Ghiyeti & Thorn
+    // (game 2.0.2) Thorn's weapons (`We8090`, six `We8091`) take hits but keep Thorn's full HP
+    // for the whole fight. `We*` targets that do lose HP (`We7300`) are kept.
+    let mut order: Vec<&Tracked> = tracked
+        .iter()
+        .filter(|entry| entry.damaged || !entry.class.as_deref().is_some_and(is_hp_linked_class))
+        .collect();
     order.sort_by(|a, b| {
         b.max_hp
             .cmp(&a.max_hp)
@@ -593,8 +609,14 @@ pub fn snapshot() -> Vec<EnemyHp> {
             hp: entry.hp,
             max_hp: entry.max_hp,
             parts: entry.parts.clone(),
+            class: entry.class.clone(),
         })
         .collect()
+}
+
+/// Classes of objects that may only mirror a boss's HP (weapons and the like).
+fn is_hp_linked_class(class: &str) -> bool {
+    class.starts_with("We")
 }
 
 /// Tracked enemies as (type hash, instance), for diagnostics.

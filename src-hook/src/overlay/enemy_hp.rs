@@ -118,13 +118,14 @@ fn draw_enemy(ui: &Ui, config: &EnemyHpConfig, enemy: &EnemyHp, name: Option<&st
     let bar_height = 10.0 * config.scale;
     let ratio = (enemy.hp as f64 / enemy.max_hp as f64).clamp(0.0, 1.0) as f32;
 
-    let fallback;
-    let name = match name {
-        Some(name) => name,
-        None => {
-            fallback = format!("{:08x}", enemy.type_hash);
-            &fallback
-        }
+    // The game has no name for some enemies (e.g. `We7300`): their class name then, instead of
+    // the app's "unknown <hash>".
+    let hash = format!("{:08x}", enemy.type_hash);
+    let unnamed = name.map_or(true, |name| name.contains(&hash));
+    let name = match (unnamed, enemy.class.as_deref(), name) {
+        (true, Some(class), _) => class,
+        (_, _, Some(name)) => name,
+        _ => hash.as_str(),
     };
     let value = format!(
         "{} / {}  {:.1}%",
