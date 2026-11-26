@@ -273,6 +273,13 @@ pub struct OnDeathEvent {
     pub death_counter: u32,
 }
 
+/// A party member entering a link attack (joining the party's link window); also used for a
+/// downed member getting up (`Message::OnRevive`).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct LinkAttackEvent {
+    pub actor_index: u32,
+}
+
 /// An enemy's breakable part reaching zero durability.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PartBrokenEvent {
@@ -323,6 +330,10 @@ pub enum Message {
     StatusRemoved(StatusEvent),
     /// An enemy's breakable part broke.
     PartBroken(PartBrokenEvent),
+    /// A party member started a link attack.
+    LinkAttack(LinkAttackEvent),
+    /// A downed party member got up again (revived or auto-revived).
+    OnRevive(LinkAttackEvent),
     /// The player pressed a copy button in the in-game overlay. Handled by the app's UI and
     /// never stored in encounter logs. Must stay after every logged variant: bincode encodes
     /// the variant index.

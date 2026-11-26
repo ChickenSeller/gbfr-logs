@@ -208,7 +208,9 @@ impl log::Log for Quieted {
                         &log::Record::builder()
                             .level(log::Level::Info)
                             .target("hook")
-                            .args(format_args!("({skipped} repeated overlay messages left out)"))
+                            .args(format_args!(
+                                "({skipped} repeated overlay messages left out)"
+                            ))
                             .build(),
                     );
                 }

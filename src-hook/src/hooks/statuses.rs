@@ -39,6 +39,8 @@ const STATUS_SOURCE_ENTITY_OFFSET: usize = 0x30;
 const ENTITY_INSTANCE_OFFSET: usize = 0x70;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// Polls between two scans of the game's player characters.
+const PARTY_SCAN_TICKS: u32 = 10;
 const MAX_TRACKED_ACTORS: usize = 16;
 
 struct TrackedActor {
@@ -57,8 +59,17 @@ static CLASS_NAMES: OnceLock<Mutex<HashMap<usize, Option<String>>>> = OnceLock::
 pub fn setup(game_base: usize, tx: event::Tx) {
     let _ = GAME_BASE.set(game_base);
     crate::shutdown::spawn(move || {
+        let mut ticks: u32 = 0;
         while crate::shutdown::sleep(POLL_INTERVAL) {
+            // Once a second: every party member, also those who have not dealt damage yet.
+            if ticks % PARTY_SCAN_TICKS == 0 {
+                for message in super::player::party_messages() {
+                    let _ = tx.send(message);
+                }
+            }
+            ticks = ticks.wrapping_add(1);
             poll(&tx);
+            report_actions(&tx);
             log_action_changes();
         }
     });
@@ -435,6 +446,63 @@ pub fn probe() -> serde_json::Value {
             })
             .collect(),
     )
+}
+
+/// Reports each party member entering a link attack, and going down (`ExPlayerDie`, about
+/// 3-5 s until revived in game 2.0.2 timelines) and getting up again, once per change: what the app needs to tell who
+/// joined a link window and who missed it, and to count deaths. Id's dragon form acts for Id
+/// (through `party_instances`), so its own tracked entry is skipped.
+fn report_actions(tx: &event::Tx) {
+    const LINK_ACTION: &str = "ExActLinkAttack";
+    const DIE_ACTION: &str = "ExPlayerDie";
+    const DRAGON_TYPE: u32 = 0xF575_5C0E;
+    /// Per member: the reported action they are in, and how often they died.
+    static STATE: Mutex<Vec<(u32, Option<&'static str>, u32)>> = Mutex::new(Vec::new());
+    let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
+    for (index, actor_type, instance) in party_members() {
+        if actor_type == DRAGON_TYPE {
+            continue;
+        }
+        // A failed read is no change: it must not end a downed spell early.
+        let Some((_, name)) = super::actions::current(instance) else {
+            continue;
+        };
+        let now = [LINK_ACTION, DIE_ACTION]
+            .into_iter()
+            .find(|action| *action == name);
+        let position = match state.iter().position(|(i, _, _)| *i == index) {
+            Some(position) => position,
+            None => {
+                state.push((index, None, 0));
+                state.len() - 1
+            }
+        };
+        let (_, before, deaths) = &mut state[position];
+        if now == *before {
+            continue;
+        }
+        if *before == Some(DIE_ACTION) {
+            let _ = tx.send(Message::OnRevive(protocol::LinkAttackEvent {
+                actor_index: index,
+            }));
+        }
+        *before = now;
+        match now {
+            Some(LINK_ACTION) => {
+                let _ = tx.send(Message::LinkAttack(protocol::LinkAttackEvent {
+                    actor_index: index,
+                }));
+            }
+            Some(DIE_ACTION) => {
+                *deaths += 1;
+                let _ = tx.send(Message::OnDeathEvent(protocol::OnDeathEvent {
+                    actor_index: index,
+                    death_counter: *deaths,
+                }));
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Logs each party member's action changes by class (e.g. `ExActWait -> ExActDamageCapture`),

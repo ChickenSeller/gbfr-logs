@@ -281,7 +281,7 @@ impl OverlayRenderLoop {
                 if self.section(ui, "enemy_hp", "敌人血量") {
                     self.render_enemy_hp_settings(ui);
                 }
-                if self.section(ui, "damage_taken", "承受伤害") {
+                if self.section(ui, "damage_taken", "战犯榜") {
                     self.render_damage_taken_settings(ui);
                 }
                 if self.section(ui, "combat_log", "战斗日志") {
@@ -804,7 +804,7 @@ fn window_label(window: OverlayWindow) -> &'static str {
     match window {
         OverlayWindow::Meter => "伤害统计",
         OverlayWindow::EnemyHp => "敌人血量",
-        OverlayWindow::DamageTaken => "承受伤害",
+        OverlayWindow::DamageTaken => "战犯榜",
         OverlayWindow::CombatLog => "战斗日志",
     }
 }

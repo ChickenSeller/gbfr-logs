@@ -208,9 +208,14 @@ export const buildOverlayState = (
     damageTaken: overlayDamageTaken(encounterState, partyData, players, partyColors, values),
     combatLog: overlayCombatLog(combatLog, encounterState, partyData, partyColors, values),
     damageTakenLabels: {
-      title: t("ui.logs.damage-taken"),
+      title: t("ui.damage-taken.board-title"),
       hits: t("ui.damage-taken.hits"),
       maxHit: t("ui.damage-taken.max-hit"),
+      missedLinks: t("ui.damage-taken.missed-links"),
+      missedChains: t("ui.damage-taken.missed-chains"),
+      deaths: t("ui.damage-taken.deaths"),
+      autoRevives: t("ui.damage-taken.auto-revives"),
+      downedTime: t("ui.damage-taken.downed-time"),
     },
     attackTypes: ATTACK_CATEGORIES.map((category) => ({
       label: t(`ui.attack-types.${category}`),
@@ -241,7 +246,8 @@ const overlayCombatLog = (
     .map((line) => ({ time: line.time, text: line.text, color: hexToRgb(line.color) }));
 };
 
-/** Party members' damage taken with the meter's names and colours, most first. */
+/** The hall of shame: each party member's missed links and SBA chains, damage taken and
+ * debuffs, with the meter's names and colours; most misses first, then most damage taken. */
 const overlayDamageTaken = (
   encounterState: EncounterState,
   partyData: Array<PlayerData | null>,
@@ -249,13 +255,19 @@ const overlayDamageTaken = (
   partyColors: string[],
   values: OverlaySettingsValues
 ): OverlayDamageTaken[] => {
+  // Before the first fight (or after clearing) there is nothing to show.
+  if (encounterState.status === "Waiting") return [];
   const taken = encounterState.damageTaken ?? {};
   const statuses = encounterState.statuses ?? {};
+  const missed = encounterState.missed ?? {};
   const characters = partyCharacters(encounterState);
-  // Members who took damage or got a debuff, most damage first.
-  const indices = [...new Set([...Object.keys(taken), ...Object.keys(statuses)].map(Number))].sort(
-    (a, b) => (taken[b]?.totalDamage ?? 0) - (taken[a]?.totalDamage ?? 0)
-  );
+  const misses = (index: number) =>
+    (missed[index]?.missedLinks ?? 0) + (missed[index]?.missedChains ?? 0) + (missed[index]?.deaths ?? 0);
+  // Members who missed something, died, took damage or got a debuff; most misses and deaths
+  // first.
+  const indices = [
+    ...new Set([...Object.keys(taken), ...Object.keys(statuses), ...Object.keys(missed)].map(Number)),
+  ].sort((a, b) => misses(b) - misses(a) || (taken[b]?.totalDamage ?? 0) - (taken[a]?.totalDamage ?? 0));
 
   return indices.flatMap((index, i): OverlayDamageTaken[] => {
     const debuffs = sortStatuses(Object.values(statuses[index] ?? {}))
@@ -268,7 +280,8 @@ const overlayDamageTaken = (
         highlight: isHighlighted(stats),
       }));
     const memberTaken = taken[index];
-    if (!memberTaken && debuffs.length === 0) return [];
+    const memberMissed = missed[index];
+    if (!memberTaken && debuffs.length === 0 && !memberMissed) return [];
 
     const partySlotIndex = partyData.findIndex((member) => member?.actorIndex === index);
     if (values.streamerMode && partySlotIndex !== 0) return [];
@@ -293,6 +306,11 @@ const overlayDamageTaken = (
         hits: toCount(memberTaken?.hits ?? 0),
         maxHit: toCount(memberTaken?.maxHit ?? 0),
         debuffs,
+        missedLinks: toCount(memberMissed?.missedLinks ?? 0),
+        missedChains: toCount(memberMissed?.missedChains ?? 0),
+        deaths: toCount(memberMissed?.deaths ?? 0),
+        downedMs: toCount(memberMissed?.downedMs ?? 0),
+        autoRevives: toCount(memberMissed?.autoRevives ?? 0),
       },
     ];
   });

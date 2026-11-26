@@ -371,8 +371,7 @@ pub mod gauge {
         let base = instance + crate::hooks::rtti::base_offset(instance, POINT_CLASS)?;
         let value = read_process_value::<f32>((base + VALUE) as *const f32)?;
         let maximum = read_process_value::<f32>((base + MAXIMUM) as *const f32)?;
-        (maximum > 0.0 && maximum <= 10_000.0 && (0.0..=maximum).contains(&value))
-            .then_some(value)
+        (maximum > 0.0 && maximum <= 10_000.0 && (0.0..=maximum).contains(&value)).then_some(value)
     }
 
     /// What a change of the gauge from `before` to `now` reports.
@@ -380,11 +379,15 @@ pub mod gauge {
         match before {
             Some(before) if (before - now).abs() < 0.01 => None,
             Some(before) if now <= 0.0 && before > 0.0 => {
-                Some(Message::OnPerformSBA(protocol::OnPerformSBAEvent { actor_index }))
+                Some(Message::OnPerformSBA(protocol::OnPerformSBAEvent {
+                    actor_index,
+                }))
             }
             // Spent at the start of the SBA (1000 -> 800), before it lands.
             Some(before) if now < before && now > 0.0 => {
-                Some(Message::OnAttemptSBA(protocol::OnAttemptSBAEvent { actor_index }))
+                Some(Message::OnAttemptSBA(protocol::OnAttemptSBAEvent {
+                    actor_index,
+                }))
             }
             _ => Some(Message::OnUpdateSBA(protocol::OnUpdateSBAEvent {
                 actor_index,
@@ -430,8 +433,14 @@ mod tests {
             event(1, Some(400.0), 450.0),
             Some(Message::OnUpdateSBA(e)) if e.sba_value == 450.0 && e.sba_added == 50.0
         ));
-        assert!(matches!(event(1, Some(1000.0), 800.0), Some(Message::OnAttemptSBA(_))));
-        assert!(matches!(event(1, Some(800.0), 0.0), Some(Message::OnPerformSBA(_))));
+        assert!(matches!(
+            event(1, Some(1000.0), 800.0),
+            Some(Message::OnAttemptSBA(_))
+        ));
+        assert!(matches!(
+            event(1, Some(800.0), 0.0),
+            Some(Message::OnPerformSBA(_))
+        ));
         assert!(matches!(
             event(1, None, 300.0),
             Some(Message::OnUpdateSBA(e)) if e.sba_added == 0.0

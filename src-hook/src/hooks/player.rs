@@ -326,6 +326,37 @@ fn should_cache_identity(identity: &StoredPlayerIdentity) -> bool {
     identity.party_index == 0 || identity.is_online
 }
 
+/// Identities and loadouts of every player character the game lists as damageable, for members
+/// who have not dealt damage yet (they were only reported with their first hit, so an AI
+/// supporter that had not attacked showed no loadout). Id's dragon form reports as Id. Also
+/// starts watching each member's statuses, SBA gauge and actions from the start of the fight.
+pub fn party_messages() -> Vec<protocol::Message> {
+    let mut messages = Vec::new();
+    for actor in super::hurtboxes::actors()
+        .into_iter()
+        .filter(|actor| actor.player)
+    {
+        let pointer = actor.instance as *const usize;
+        let type_id = super::actor_type_id(pointer);
+        let (parent_type, parent_index, identity_actor) =
+            match super::get_source_parent_instance(type_id, pointer) {
+                Some((parent_type, parent)) => (parent_type, super::actor_idx(parent), parent),
+                None => (type_id, super::actor_idx(pointer), pointer),
+            };
+        if !super::enemy_hp::is_player_type(parent_type) {
+            continue;
+        }
+        super::statuses::track(actor.instance, parent_index, type_id);
+        for identity in identity_events_for_actor(identity_actor, parent_type, parent_index) {
+            messages.push(protocol::Message::PlayerIdentityEvent(identity));
+        }
+        if let Some(load) = pending_load_event(identity_actor, parent_type, parent_index) {
+            messages.push(protocol::Message::PlayerLoadEvent(load));
+        }
+    }
+    messages
+}
+
 /// Resolves an identity from the concrete player actor itself, matching the
 /// original meter's actor-to-party mapping. Character keys are used only when
 /// exactly one cached identity owns the key; ambiguous same-character keys are

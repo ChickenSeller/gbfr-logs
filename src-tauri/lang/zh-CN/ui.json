@@ -16,7 +16,7 @@
       "open-logs": "打开日志",
       "toggle-overlay-meter": "显示伤害统计",
       "toggle-overlay-enemy-hp": "显示敌人血量",
-      "toggle-overlay-damage-taken": "显示承受伤害",
+      "toggle-overlay-damage-taken": "显示战犯榜",
       "toggle-overlay-combat-log": "显示战斗日志",
       "toggle-overlay-menu": "显示游戏内设置界面",
       "reset-windows": "重置窗口",
@@ -175,6 +175,12 @@
       "dot": "持续伤害"
     },
     "damage-taken": {
+      "board-title": "战犯榜",
+      "missed-links": "漏Link",
+      "missed-chains": "漏奥义",
+      "deaths": "濒死",
+      "auto-revives": "自动复活",
+      "downed-time": "濒死时间",
       "empty": "没有记录到承受伤害。此版本之前保存的日志不包含这项数据。",
       "total": "承受伤害",
       "hits": "次数",

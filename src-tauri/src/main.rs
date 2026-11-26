@@ -1,12 +1,7 @@
 // Prevents additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::Write,
-    path::Path,
-};
+use std::{collections::HashMap, fs::File, io::Write, path::Path};
 
 use anyhow::Context;
 use db::logs::LogEntry;
@@ -504,6 +499,12 @@ fn connect_and_run_parser(app: AppHandle) {
                                         protocol::Message::PartBroken(event) => {
                                             state.on_part_broken(event);
                                         }
+                                        protocol::Message::LinkAttack(event) => {
+                                            state.on_link_attack(event);
+                                        }
+                                        protocol::Message::OnRevive(event) => {
+                                            state.on_revive(event);
+                                        }
                                         protocol::Message::StatusApplied(event) => {
                                             state.on_status_applied(event);
                                         }
@@ -764,13 +765,15 @@ fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
                         Ok(path) => {
                             diagnostics::reveal(&path);
                             if let Some(window) = window {
-                                let _ = window.emit("diagnostics-exported", path.display().to_string());
+                                let _ =
+                                    window.emit("diagnostics-exported", path.display().to_string());
                             }
                         }
                         Err(error) => {
                             log::error!("Diagnostics export failed: {error:#}");
                             if let Some(window) = window {
-                                let _ = window.emit("diagnostics-export-failed", format!("{error:#}"));
+                                let _ =
+                                    window.emit("diagnostics-export-failed", format!("{error:#}"));
                             }
                         }
                     }
@@ -801,11 +804,9 @@ fn menu_tray_handler(handle: &AppHandle, event: SystemTrayEvent) {
                 // can inject again without restarting the game.
                 let feed = handle.state::<overlay::OverlayFeed>().inner().clone();
                 tauri::async_runtime::block_on(async move {
-                    let _ = tokio::time::timeout(
-                        std::time::Duration::from_secs(1),
-                        feed.unload_hook(),
-                    )
-                    .await;
+                    let _ =
+                        tokio::time::timeout(std::time::Duration::from_secs(1), feed.unload_hook())
+                            .await;
                 });
                 handle.exit(0)
             }
@@ -877,7 +878,10 @@ fn main() {
     // Kaguya Edition renamed the data folder (gbfr-logs-awa -> gbfr-logs-kaguya). Done before
     // the hook is injected, so both find the moved settings and logs.
     match protocol::paths::migrate_legacy_data_dir() {
-        Ok(true) => info!("Moved the data folder to {}", protocol::paths::DATA_DIR_NAME),
+        Ok(true) => info!(
+            "Moved the data folder to {}",
+            protocol::paths::DATA_DIR_NAME
+        ),
         Ok(false) => {}
         Err(error) => log::warn!("Could not move the old data folder: {error}"),
     }

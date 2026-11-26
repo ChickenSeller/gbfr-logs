@@ -16,7 +16,7 @@
       "open-logs": "Open Logs",
       "toggle-overlay-meter": "Show In-game Meter",
       "toggle-overlay-enemy-hp": "Show Enemy HP",
-      "toggle-overlay-damage-taken": "Show Damage Taken",
+      "toggle-overlay-damage-taken": "Show Hall of Shame",
       "toggle-overlay-combat-log": "Show Combat Log",
       "toggle-overlay-menu": "Show In-game Settings",
       "reset-windows": "Reset Windows",
@@ -175,6 +175,12 @@
       "dot": "Damage over Time"
     },
     "damage-taken": {
+      "board-title": "Hall of Shame",
+      "missed-links": "Missed Links",
+      "missed-chains": "Missed SBA Chains",
+      "deaths": "Downed",
+      "auto-revives": "Auto-revive",
+      "downed-time": "Downed Time",
       "empty": "No damage taken was recorded. Logs saved before this version do not include it.",
       "total": "Damage Taken",
       "hits": "Hits",

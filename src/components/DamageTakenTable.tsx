@@ -1,7 +1,7 @@
 import { NumberFormatter, Progress, Table, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 
-import { ComputedPlayerState, DamageTakenState, EncounterState, PlayerData } from "@/types";
+import { ComputedPlayerState, DamageTakenState, EncounterState, MissStats, PlayerData } from "@/types";
 import { resolvePlayerColor, translateEnemyTypeId, translatedPlayerName } from "@/utils";
 
 type Props = {
@@ -26,10 +26,34 @@ const asPlayer = (taken: DamageTakenState, partyIndex: number): ComputedPlayerSt
   percentage: 0,
 });
 
+/** Times downed (auto-revives in brackets) and the time spent downed; "-" in logs saved before
+ * they were counted. */
+const downed = (stats: MissStats | undefined, autoRevive: string) =>
+  stats ? `${stats.deaths} (${autoRevive} ${stats.autoRevives ?? 0})  ${(stats.downedMs / 1000).toFixed(1)}s` : "-";
+
 /** Damage each party member took, most first, with the enemies that dealt it. */
 export const DamageTakenTable = ({ encounter, partyData, playerColors, showDisplayNames }: Props) => {
   const { t } = useTranslation();
-  const rows = Object.values(encounter.damageTaken ?? {}).sort((a, b) => b.totalDamage - a.totalDamage);
+  // Every party member has a row, also one who took no damage (logs saved before damage taken
+  // was recorded have none at all, and say so).
+  const taken = encounter.damageTaken;
+  const rows = taken
+    ? [
+        ...Object.values(taken),
+        ...Object.values(encounter.party)
+          .filter((player) => !taken[player.index])
+          .map(
+            (player): DamageTakenState => ({
+              index: player.index,
+              characterType: player.characterType,
+              totalDamage: 0,
+              hits: 0,
+              maxHit: 0,
+              sources: {},
+            })
+          ),
+      ].sort((a, b) => b.totalDamage - a.totalDamage)
+    : [];
   const top = rows[0]?.totalDamage ?? 0;
 
   if (rows.length === 0) {
@@ -48,6 +72,9 @@ export const DamageTakenTable = ({ encounter, partyData, playerColors, showDispl
           <Table.Th>{t("ui.damage-taken.total")}</Table.Th>
           <Table.Th>{t("ui.damage-taken.hits")}</Table.Th>
           <Table.Th>{t("ui.damage-taken.max-hit")}</Table.Th>
+          <Table.Th>{t("ui.damage-taken.missed-links")}</Table.Th>
+          <Table.Th>{t("ui.damage-taken.missed-chains")}</Table.Th>
+          <Table.Th>{t("ui.damage-taken.deaths")}</Table.Th>
           <Table.Th>{t("ui.damage-taken.sources")}</Table.Th>
         </Table.Tr>
       </Table.Thead>
@@ -77,6 +104,10 @@ export const DamageTakenTable = ({ encounter, partyData, playerColors, showDispl
               <Table.Td>
                 <NumberFormatter thousandSeparator value={taken.maxHit} />
               </Table.Td>
+              {/* Absent in logs saved before misses were counted. */}
+              <Table.Td>{encounter.missed?.[taken.index]?.missedLinks ?? "-"}</Table.Td>
+              <Table.Td>{encounter.missed?.[taken.index]?.missedChains ?? "-"}</Table.Td>
+              <Table.Td>{downed(encounter.missed?.[taken.index], t("ui.damage-taken.auto-revives"))}</Table.Td>
               <Table.Td>
                 {sources.map((source) => (
                   <Text size="xs" key={source.rawSourceType}>

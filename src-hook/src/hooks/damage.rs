@@ -213,6 +213,10 @@ impl OnProcessDamageHook {
         }
         let target_type_id: u32 = actor_type_id(target_specified_instance_ptr as *const usize);
         let target_idx = actor_idx(target_specified_instance_ptr as *const usize);
+        let (target_parent_type, target_parent_idx) = target_parent(
+            target_type_id,
+            target_specified_instance_ptr as *const usize,
+        );
         if let Some((enemy_type, part_id)) =
             super::enemy_hp::observe(target_specified_instance_ptr, target_type_id)
         {
@@ -234,7 +238,12 @@ impl OnProcessDamageHook {
             );
         }
         if super::enemy_hp::is_player_type(target_type_id) {
-            super::statuses::track(target_specified_instance_ptr, target_idx, target_type_id);
+            // A form (Id's dragon) is watched as its member, so its statuses are the member's.
+            super::statuses::track(
+                target_specified_instance_ptr,
+                target_parent_idx,
+                target_type_id,
+            );
             if !super::enemy_hp::is_player_type(source_parent_type_id) {
                 // For the diagnostics timeline: which enemy object hit whom, and how hard.
                 super::timeline::record(
@@ -263,8 +272,8 @@ impl OnProcessDamageHook {
             target: Actor {
                 index: target_idx,
                 actor_type: target_type_id,
-                parent_index: target_idx,
-                parent_actor_type: target_type_id,
+                parent_index: target_parent_idx,
+                parent_actor_type: target_parent_type,
             },
             damage,
             flags,
@@ -375,6 +384,7 @@ impl OnProcessDotHook {
 
         let target_idx = actor_idx(target);
         let target_type_id = actor_type_id(target);
+        let (target_parent_type, target_parent_idx) = target_parent(target_type_id, target);
 
         let event = Message::DamageEvent(DamageEvent {
             source: Actor {
@@ -386,8 +396,8 @@ impl OnProcessDotHook {
             target: Actor {
                 index: target_idx,
                 actor_type: target_type_id,
-                parent_index: target_idx,
-                parent_actor_type: target_type_id,
+                parent_index: target_parent_idx,
+                parent_actor_type: target_parent_type,
             },
             damage: dmg,
             flags: 0,
@@ -464,4 +474,14 @@ mod tests {
             None
         );
     }
+}
+
+/// The member a hit party actor stands for: a form (Id's dragon) is its member, so the damage
+/// it takes counts as the member's instead of a row of its own ([Guest]). Anything else is
+/// itself.
+fn target_parent(target_type_id: u32, target: *const usize) -> (u32, u32) {
+    get_source_parent_instance(target_type_id, target).map_or(
+        (target_type_id, actor_idx(target)),
+        |(parent_type, parent)| (parent_type, actor_idx(parent)),
+    )
 }

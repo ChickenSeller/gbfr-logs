@@ -16,7 +16,7 @@
       "open-logs": "로그 열기",
       "toggle-overlay-meter": "게임 내 미터기 표시",
       "toggle-overlay-enemy-hp": "적 HP 표시",
-      "toggle-overlay-damage-taken": "받은 피해 표시",
+      "toggle-overlay-damage-taken": "전범 랭킹 표시",
       "toggle-overlay-combat-log": "전투 로그 표시",
       "toggle-overlay-menu": "게임 내 설정 화면 표시",
       "reset-windows": "창 초기화",
@@ -175,6 +175,12 @@
       "dot": "도트 기술"
     },
     "damage-taken": {
+      "board-title": "전범 랭킹",
+      "missed-links": "링크 놓침",
+      "missed-chains": "오의 체인 놓침",
+      "deaths": "빈사",
+      "auto-revives": "자동 부활",
+      "downed-time": "빈사 시간",
       "empty": "기록된 받은 피해가 없습니다. 이 버전 이전에 저장된 로그에는 포함되지 않습니다.",
       "total": "받은 피해",
       "hits": "횟수",

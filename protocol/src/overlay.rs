@@ -73,7 +73,7 @@ impl OverlayWindow {
         match self {
             OverlayWindow::Meter => "Show In-game Meter",
             OverlayWindow::EnemyHp => "Show Enemy HP",
-            OverlayWindow::DamageTaken => "Show Damage Taken",
+            OverlayWindow::DamageTaken => "Show Hall of Shame",
             OverlayWindow::CombatLog => "Show Combat Log",
         }
     }
@@ -216,6 +216,15 @@ pub struct OverlayDamageTaken {
     pub max_hit: u64,
     /// Debuffs and ailments received, longest total first.
     pub debuffs: Vec<OverlayStatusLine>,
+    /// Link attacks the member could have joined but did not.
+    pub missed_links: u32,
+    /// SBA chains the member could have joined (gauge full) but did not.
+    pub missed_chains: u32,
+    pub deaths: u32,
+    /// Time spent downed, in milliseconds.
+    pub downed_ms: u64,
+    /// Downs that ended in an auto-revive.
+    pub auto_revives: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -239,6 +248,11 @@ pub struct OverlayDamageTakenLabels {
     pub title: String,
     pub hits: String,
     pub max_hit: String,
+    pub missed_links: String,
+    pub missed_chains: String,
+    pub deaths: String,
+    pub auto_revives: String,
+    pub downed_time: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

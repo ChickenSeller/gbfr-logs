@@ -179,6 +179,20 @@ export type EncounterState = {
   damageTaken?: Record<number, DamageTakenState>;
   /** Status effects per party member (actor index) and class name. Missing in old logs. */
   statuses?: Record<number, Record<string, StatusStats>>;
+  /** Link attacks and SBA chains each member (actor index) joined and missed. Missing in old
+   * logs. */
+  missed?: Record<number, MissStats>;
+};
+
+/** `parser::v1::missed::MissStats`. */
+export type MissStats = {
+  links: number;
+  missedLinks: number;
+  sbas: number;
+  missedChains: number;
+  deaths: number;
+  downedMs: number;
+  autoRevives: number;
 };
 
 /** One entry of the combat log (`parser::v1::combat_log::CombatLogEntry`). `time` is in
@@ -261,7 +275,16 @@ export type OverlayState = {
   attackTypes: OverlayAttackType[];
   /** Damage taken per party member, most first, filtered by streamer mode. */
   damageTaken: OverlayDamageTaken[];
-  damageTakenLabels: { title: string; hits: string; maxHit: string };
+  damageTakenLabels: {
+    title: string;
+    hits: string;
+    maxHit: string;
+    missedLinks: string;
+    missedChains: string;
+    deaths: string;
+    autoRevives: string;
+    downedTime: string;
+  };
   /** Latest combat log lines, oldest first. */
   combatLog: OverlayLogLine[];
 };
@@ -281,6 +304,11 @@ export type OverlayDamageTaken = {
   maxHit: number;
   /** Debuffs and ailments received, longest total first */
   debuffs: { name: string; count: number; totalMs: number; damage: number; highlight: boolean }[];
+  missedLinks: number;
+  missedChains: number;
+  deaths: number;
+  downedMs: number;
+  autoRevives: number;
 };
 
 export type OverlayAttackType = {

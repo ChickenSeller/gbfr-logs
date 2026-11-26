@@ -3,8 +3,9 @@ use std::{collections::HashMap, io::BufReader};
 use anyhow::Result;
 use chrono::Utc;
 use protocol::{
-    AreaEnterEvent, DamageEvent, Message, OnAttemptSBAEvent, OnContinueSBAChainEvent, OnDeathEvent,
-    OnPerformSBAEvent, OnUpdateSBAEvent, PlayerIdentityEvent, PlayerLoadEvent, QuestCompleteEvent,
+    ActionType, AreaEnterEvent, DamageEvent, Message, OnAttemptSBAEvent, OnContinueSBAChainEvent,
+    OnDeathEvent, OnPerformSBAEvent, OnUpdateSBAEvent, PlayerIdentityEvent, PlayerLoadEvent,
+    QuestCompleteEvent,
 };
 use rusqlite::{params, Connection};
 use serde::{
@@ -19,6 +20,7 @@ use super::{
 };
 
 pub mod combat_log;
+mod missed;
 mod player_state;
 mod skill_state;
 mod statuses;
@@ -360,6 +362,9 @@ pub struct DerivedEncounterState {
     /// Status effects on each party member: counts and durations per class.
     #[serde(default, skip_deserializing)]
     statuses: statuses::StatusTracker,
+    /// Link attacks and SBA chains each member missed.
+    #[serde(default, skip_deserializing)]
+    missed: missed::MissTracker,
 }
 
 impl Default for DerivedEncounterState {
@@ -376,6 +381,7 @@ impl Default for DerivedEncounterState {
             targets: HashMap::new(),
             damage_taken: HashMap::new(),
             statuses: Default::default(),
+            missed: Default::default(),
         }
     }
 }
@@ -480,6 +486,28 @@ impl DerivedEncounterState {
     }
 }
 
+/// A zero row for each member of `players` that has none (Id's dragon form is Id's row). A zero
+/// row of someone no longer in the party (the previous battle's member, replaced in their slot)
+/// goes.
+fn add_party_rows(state: &mut DerivedEncounterState, players: &[Option<PlayerData>; 4]) {
+    state.party.retain(|index, row| {
+        row.total_damage > 0
+            || players
+                .iter()
+                .flatten()
+                .any(|player| player.actor_index == *index)
+    });
+    for player in players.iter().flatten() {
+        if player.character_type == CharacterType::Pl2000 {
+            continue;
+        }
+        state
+            .party
+            .entry(player.actor_index)
+            .or_insert_with(|| PlayerState::new(player.actor_index, player.character_type));
+    }
+}
+
 /// Lightweight serialization used only by the real-time Meter window.
 ///
 /// Damage details remain in `DerivedEncounterState` for saved logs, but sending
@@ -500,7 +528,7 @@ impl Serialize for MeterEncounterState<'_> {
         S: Serializer,
     {
         let encounter = self.0;
-        let mut state = serializer.serialize_struct("DerivedEncounterState", 11)?;
+        let mut state = serializer.serialize_struct("DerivedEncounterState", 12)?;
         state.serialize_field("startTime", &encounter.start_time)?;
         state.serialize_field("endTime", &encounter.end_time)?;
         state.serialize_field("totalDamage", &encounter.total_damage)?;
@@ -512,6 +540,7 @@ impl Serialize for MeterEncounterState<'_> {
         state.serialize_field("targets", &encounter.targets)?;
         state.serialize_field("damageTaken", &encounter.damage_taken)?;
         state.serialize_field("statuses", &encounter.statuses)?;
+        state.serialize_field("missed", &encounter.missed)?;
         state.end()
     }
 }
@@ -611,6 +640,18 @@ pub struct Parser {
     /// the ones applied before its first hit.
     #[serde(skip)]
     live_statuses: HashMap<(u32, u64), protocol::StatusEvent>,
+
+    /// Each member's SBA gauge right now, also outside encounters, so an encounter starts
+    /// knowing who can chain (a full gauge is not reported again until it changes).
+    #[serde(skip)]
+    live_gauges: HashMap<u32, f32>,
+
+    /// Actor indices that stand for a member already in the party under another index: the
+    /// game recreates the party's actors with new indices on every floor of a tower (and in each
+    /// new area), and the encounter goes on, so each floor added the same members again as new
+    /// rows (the old ones as [Guest]). New index -> the member's first index.
+    #[serde(skip)]
+    aliases: HashMap<u32, u32>,
 }
 
 impl Parser {
@@ -684,10 +725,12 @@ impl Parser {
     pub fn reparse(&mut self) {
         self.derived_state = Default::default();
         self.derived_state.start(self.start_time());
+        add_party_rows(&mut self.derived_state, &self.encounter.player_data);
 
         for (timestamp, event) in self.encounter.event_log() {
             self.derived_state.end_time = *timestamp;
             self.derived_state.statuses.touch(*timestamp);
+            self.derived_state.missed.touch(*timestamp);
 
             match event {
                 Message::DamageEvent(event) => {
@@ -703,6 +746,11 @@ impl Parser {
 
                     self.derived_state
                         .process_damage_event(*timestamp, &damage_instance);
+                    if event.action_id == ActionType::LinkAttack {
+                        self.derived_state
+                            .missed
+                            .link_damage(*timestamp, event.source.parent_index);
+                    }
                 }
                 Message::DamageTaken(event) => {
                     self.derived_state.process_damage_taken(event);
@@ -711,11 +759,41 @@ impl Parser {
                         .damage_taken(event.target.parent_index, event.damage as u64);
                 }
                 Message::StatusApplied(event) => {
-                    self.derived_state.statuses.applied(*timestamp, event)
+                    self.derived_state.statuses.applied(*timestamp, event);
+                    self.derived_state.missed.status_applied(
+                        *timestamp,
+                        event.actor_index,
+                        &event.class_name,
+                    );
                 }
                 Message::StatusRemoved(event) => {
                     self.derived_state.statuses.removed(*timestamp, event)
                 }
+                Message::OnUpdateSBA(event) => {
+                    self.derived_state
+                        .missed
+                        .gauge(*timestamp, event.actor_index, event.sba_value)
+                }
+                Message::OnAttemptSBA(event) => self
+                    .derived_state
+                    .missed
+                    .sba_attempt(*timestamp, event.actor_index),
+                Message::OnPerformSBA(event) => self
+                    .derived_state
+                    .missed
+                    .sba_perform(*timestamp, event.actor_index),
+                Message::LinkAttack(event) => self
+                    .derived_state
+                    .missed
+                    .link_attack(*timestamp, event.actor_index),
+                Message::OnDeathEvent(event) => self
+                    .derived_state
+                    .missed
+                    .death(*timestamp, event.actor_index),
+                Message::OnRevive(event) => self
+                    .derived_state
+                    .missed
+                    .revive(*timestamp, event.actor_index),
                 _ => {}
             }
         }
@@ -725,6 +803,7 @@ impl Parser {
     pub fn reparse_with_options(&mut self, targets: &[EnemyType]) {
         self.derived_state = Default::default();
         self.derived_state.start(self.start_time());
+        add_party_rows(&mut self.derived_state, &self.encounter.player_data);
 
         for (timestamp, event) in self.encounter.event_log() {
             self.derived_state.end_time = *timestamp;
@@ -891,7 +970,9 @@ impl Parser {
     }
 
     // Called when a damage event is received from the game.
-    pub fn on_damage_event(&mut self, event: DamageEvent) {
+    pub fn on_damage_event(&mut self, mut event: DamageEvent) {
+        self.canonical_actor(&mut event.source);
+        self.canonical_actor(&mut event.target);
         let now = Utc::now().timestamp_millis();
 
         if Self::should_ignore_damage_event(&event) {
@@ -920,8 +1001,26 @@ impl Parser {
                 self.derived_state.statuses.applied(now, &event);
                 self.push_logged_event(now, Message::StatusApplied(event));
             }
+            self.add_party_rows();
+            // Gauges as they stand, so the encounter (and its log) knows who can chain.
+            let mut gauges: Vec<(u32, f32)> =
+                self.live_gauges.iter().map(|(a, v)| (*a, *v)).collect();
+            gauges.sort_by_key(|(actor, _)| *actor);
+            for (actor_index, sba_value) in gauges {
+                self.derived_state.missed.gauge(now, actor_index, sba_value);
+                self.set_member_sba(actor_index, sba_value as f64);
+                self.encounter.push_event(
+                    now,
+                    Message::OnUpdateSBA(OnUpdateSBAEvent {
+                        actor_index,
+                        sba_value,
+                        sba_added: 0.0,
+                    }),
+                );
+            }
         }
         self.derived_state.statuses.touch(now);
+        self.derived_state.missed.touch(now);
 
         self.push_logged_event(now, Message::DamageEvent(event.clone()));
 
@@ -936,6 +1035,11 @@ impl Parser {
 
         self.derived_state
             .process_damage_event(now, &damage_instance);
+        if event.action_id == ActionType::LinkAttack {
+            self.derived_state
+                .missed
+                .link_damage(now, event.source.parent_index);
+        }
 
         self.emit_meter_event("encounter-update");
     }
@@ -963,11 +1067,11 @@ impl Parser {
 
         let finished = self.finish_and_save_encounter();
         if finished {
-            // "Play Again" does not emit the disabled area-enter hook. Drop
-            // the completed encounter's actor-to-party snapshot here, before
-            // the next battle's identity events arrive.
-            self.encounter.reset_player_data();
-            self.emit_party_update();
+            // The party is kept: identities go to their verified party slot, so the next
+            // battle's members replace the old ones slot by slot. Clearing it here lost
+            // members the hook does not report again (it reports an actor once): on a quest
+            // of several bosses the player's own slot stayed empty, and the finished fight's
+            // meter, statuses and combat log fell back to [Guest].
         }
 
         finished
@@ -1005,13 +1109,20 @@ impl Parser {
         }
     }
 
-    pub fn on_player_load_event(&mut self, event: PlayerLoadEvent) {
+    pub fn on_player_load_event(&mut self, mut event: PlayerLoadEvent) {
         let character_type = CharacterType::from_hash(event.character_type);
 
         // Ignore Id's transformation.
         if character_type == CharacterType::Pl2000 {
             return;
         }
+        event.actor_index = self.member_index(
+            event.party_index,
+            event.actor_index,
+            character_type,
+            &event.display_name.to_string_lossy(),
+            &event.character_name.to_string_lossy(),
+        );
 
         let sigils = event
             .sigils
@@ -1052,6 +1163,48 @@ impl Parser {
         }
     }
 
+    /// The index a member is counted under: when `actor_index` is new but its party slot holds
+    /// the same member (character, player name and character name) under another index, that
+    /// index, and `actor_index` becomes its alias.
+    fn member_index(
+        &mut self,
+        party_index: u8,
+        actor_index: u32,
+        character_type: CharacterType,
+        display_name: &str,
+        character_name: &str,
+    ) -> u32 {
+        let actor_index = self.canonical(actor_index);
+        let Some(Some(member)) = self.encounter.player_data.get(usize::from(party_index)) else {
+            return actor_index;
+        };
+        let same_member = member.actor_index != actor_index
+            && member.character_type == character_type
+            && member.display_name == display_name
+            && member.character_name == character_name;
+        if same_member {
+            self.aliases.insert(actor_index, member.actor_index);
+            return member.actor_index;
+        }
+        actor_index
+    }
+
+    /// The index `actor_index` is counted under.
+    fn canonical(&self, actor_index: u32) -> u32 {
+        self.aliases
+            .get(&actor_index)
+            .copied()
+            .unwrap_or(actor_index)
+    }
+
+    fn canonical_actor(&self, actor: &mut protocol::Actor) {
+        let parent = self.canonical(actor.parent_index);
+        if actor.index == actor.parent_index {
+            actor.index = parent;
+        }
+        actor.parent_index = parent;
+    }
+
     fn insert_player_identity_data(&mut self, player_data: PlayerData, party_index: u8) {
         let party_index = usize::from(party_index);
         if party_index >= self.encounter.player_data.len() {
@@ -1071,16 +1224,26 @@ impl Parser {
             }
         }
         self.encounter.player_data[party_index] = Some(player_data);
+        if self.status == ParserStatus::InProgress {
+            self.add_party_rows();
+        }
 
         self.emit_party_update();
     }
 
-    pub fn on_player_identity_event(&mut self, event: PlayerIdentityEvent) {
+    pub fn on_player_identity_event(&mut self, mut event: PlayerIdentityEvent) {
         let character_type = CharacterType::from_hash(event.character_type);
 
         if character_type == CharacterType::Pl2000 {
             return;
         }
+        event.actor_index = self.member_index(
+            event.party_index,
+            event.actor_index,
+            character_type,
+            &event.display_name.to_string_lossy(),
+            &event.character_name.to_string_lossy(),
+        );
 
         let display_name = event.display_name.to_string_lossy().to_string();
         let character_name = event.character_name.to_string_lossy().to_string();
@@ -1203,50 +1366,67 @@ impl Parser {
     }
 
     /// Handles setting the SBA gauge value for a player
-    pub fn on_sba_update(&mut self, event: OnUpdateSBAEvent) {
-        self.encounter.push_event(
-            Utc::now().timestamp_millis(),
-            Message::OnUpdateSBA(event.clone()),
-        );
+    pub fn on_sba_update(&mut self, mut event: OnUpdateSBAEvent) {
+        event.actor_index = self.canonical(event.actor_index);
+        let now = Utc::now().timestamp_millis();
+        self.live_gauges.insert(event.actor_index, event.sba_value);
+        // Only during a fight, so the hall of shame stays empty outside one; the gauges are
+        // carried into the next fight from `live_gauges` when it starts.
+        if self.status == ParserStatus::InProgress {
+            self.derived_state
+                .missed
+                .gauge(now, event.actor_index, event.sba_value);
+        }
+        self.encounter
+            .push_event(now, Message::OnUpdateSBA(event.clone()));
 
         let player_index = event.actor_index;
-        if let Some(player) = self.derived_state.party.get_mut(&player_index) {
-            player.set_sba(event.sba_value as f64);
-        }
+        self.set_member_sba(player_index, event.sba_value as f64);
 
         self.emit_meter_event("encounter-update");
     }
 
-    pub fn on_sba_attempt(&mut self, event: OnAttemptSBAEvent) {
-        self.push_logged_event(
-            Utc::now().timestamp_millis(),
-            Message::OnAttemptSBA(event.clone()),
-        );
+    pub fn on_sba_attempt(&mut self, mut event: OnAttemptSBAEvent) {
+        event.actor_index = self.canonical(event.actor_index);
+        let now = Utc::now().timestamp_millis();
+        self.live_gauges.insert(event.actor_index, 800.0);
+        // Only during a fight, so the hall of shame stays empty outside one; the gauges are
+        // carried into the next fight from `live_gauges` when it starts.
+        if self.status == ParserStatus::InProgress {
+            self.derived_state
+                .missed
+                .sba_attempt(now, event.actor_index);
+        }
+        self.push_logged_event(now, Message::OnAttemptSBA(event.clone()));
 
         let player_index = event.actor_index;
-        if let Some(player) = self.derived_state.party.get_mut(&player_index) {
-            player.set_sba(800.0);
-        }
+        self.set_member_sba(player_index, 800.0);
 
         self.emit_meter_event("encounter-update");
     }
 
-    pub fn on_sba_perform(&mut self, event: OnPerformSBAEvent) {
-        self.push_logged_event(
-            Utc::now().timestamp_millis(),
-            Message::OnPerformSBA(event.clone()),
-        );
+    pub fn on_sba_perform(&mut self, mut event: OnPerformSBAEvent) {
+        event.actor_index = self.canonical(event.actor_index);
+        let now = Utc::now().timestamp_millis();
+        self.live_gauges.insert(event.actor_index, 0.0);
+        // Only during a fight, so the hall of shame stays empty outside one; the gauges are
+        // carried into the next fight from `live_gauges` when it starts.
+        if self.status == ParserStatus::InProgress {
+            self.derived_state
+                .missed
+                .sba_perform(now, event.actor_index);
+        }
+        self.push_logged_event(now, Message::OnPerformSBA(event.clone()));
 
         let player_index = event.actor_index;
-        if let Some(player) = self.derived_state.party.get_mut(&player_index) {
-            player.set_sba(0.0);
-        }
+        self.set_member_sba(player_index, 0.0);
 
         self.emit_meter_event("encounter-update");
     }
 
     /// @TODO(false): Note that this event only fires for the local player.
-    pub fn on_continue_sba_chain(&mut self, event: OnContinueSBAChainEvent) {
+    pub fn on_continue_sba_chain(&mut self, mut event: OnContinueSBAChainEvent) {
+        event.actor_index = self.canonical(event.actor_index);
         self.push_logged_event(
             Utc::now().timestamp_millis(),
             Message::OnContinueSBAChain(event.clone()),
@@ -1260,11 +1440,15 @@ impl Parser {
         self.emit_meter_event("encounter-update");
     }
 
-    pub fn on_death_event(&mut self, event: OnDeathEvent) {
-        self.push_logged_event(
-            Utc::now().timestamp_millis(),
-            Message::OnDeathEvent(event.clone()),
-        );
+    pub fn on_death_event(&mut self, mut event: OnDeathEvent) {
+        event.actor_index = self.canonical(event.actor_index);
+        if self.status != ParserStatus::InProgress {
+            return;
+        }
+        let now = Utc::now().timestamp_millis();
+        self.derived_state.missed.death(now, event.actor_index);
+        self.push_logged_event(now, Message::OnDeathEvent(event.clone()));
+        self.emit_meter_event("encounter-update");
     }
 
     fn reset(&mut self) {
@@ -1297,6 +1481,54 @@ impl Parser {
     }
 
     // Checks if the damage event should be ignored for the purposes of parsing.
+    /// A member's SBA gauge on the meter. During a fight a member who has not dealt damage yet
+    /// gets a row of their own for it (a known party member only), so their gauge shows too.
+    fn set_member_sba(&mut self, index: u32, value: f64) {
+        if let Some(player) = self.derived_state.party.get_mut(&index) {
+            player.set_sba(value);
+            return;
+        }
+        if self.status != ParserStatus::InProgress {
+            return;
+        }
+        self.add_party_rows();
+        if let Some(player) = self.derived_state.party.get_mut(&index) {
+            player.set_sba(value);
+        }
+    }
+
+    /// Every party member gets a row, even with no damage dealt or taken and an empty SBA
+    /// gauge: the meter, the logs and the overlay list the whole party.
+    fn add_party_rows(&mut self) {
+        add_party_rows(&mut self.derived_state, &self.encounter.player_data);
+    }
+
+    /// A downed member got up: ends their downed time.
+    pub fn on_revive(&mut self, mut event: protocol::LinkAttackEvent) {
+        event.actor_index = self.canonical(event.actor_index);
+        if self.status != ParserStatus::InProgress {
+            return;
+        }
+        let now = Utc::now().timestamp_millis();
+        self.derived_state.missed.revive(now, event.actor_index);
+        self.push_logged_event(now, Message::OnRevive(event));
+        self.emit_meter_event("encounter-update");
+    }
+
+    /// A member entered a link attack: opens or joins the link window.
+    pub fn on_link_attack(&mut self, mut event: protocol::LinkAttackEvent) {
+        event.actor_index = self.canonical(event.actor_index);
+        if self.status != ParserStatus::InProgress {
+            return;
+        }
+        let now = Utc::now().timestamp_millis();
+        self.derived_state
+            .missed
+            .link_attack(now, event.actor_index);
+        self.push_logged_event(now, Message::LinkAttack(event));
+        self.emit_meter_event("encounter-update");
+    }
+
     pub fn on_part_broken(&mut self, event: protocol::PartBrokenEvent) {
         if self.status != ParserStatus::InProgress {
             return;
@@ -1305,7 +1537,8 @@ impl Parser {
         self.push_logged_event(now, Message::PartBroken(event));
     }
 
-    pub fn on_status_applied(&mut self, event: protocol::StatusEvent) {
+    pub fn on_status_applied(&mut self, mut event: protocol::StatusEvent) {
+        event.actor_index = self.canonical(event.actor_index);
         self.live_statuses
             .insert((event.actor_index, event.status_id), event.clone());
         if self.status != ParserStatus::InProgress {
@@ -1313,11 +1546,15 @@ impl Parser {
         }
         let now = Utc::now().timestamp_millis();
         self.derived_state.statuses.applied(now, &event);
+        self.derived_state
+            .missed
+            .status_applied(now, event.actor_index, &event.class_name);
         self.push_logged_event(now, Message::StatusApplied(event));
         self.emit_meter_event("encounter-update");
     }
 
-    pub fn on_status_removed(&mut self, event: protocol::StatusEvent) {
+    pub fn on_status_removed(&mut self, mut event: protocol::StatusEvent) {
+        event.actor_index = self.canonical(event.actor_index);
         self.live_statuses
             .remove(&(event.actor_index, event.status_id));
         if self.status != ParserStatus::InProgress {
@@ -1456,7 +1693,7 @@ impl From<v0::Parser> for Parser {
 mod tests {
     use std::ffi::CString;
 
-    use protocol::{ActionType, Actor, DamageDetails};
+    use protocol::{Actor, DamageDetails};
 
     use super::*;
 
@@ -1612,6 +1849,63 @@ mod tests {
     }
 
     #[test]
+    fn members_without_damage_still_have_a_row() {
+        let mut parser = Parser::default();
+        for (party_index, actor_index, character_type) in
+            [(0, 9, 0x4C714F77_u32), (1, 10, 0xC3155079)]
+        {
+            parser.on_player_identity_event(PlayerIdentityEvent {
+                character_name: CString::new("Character").unwrap(),
+                display_name: CString::new("Player").unwrap(),
+                character_type,
+                party_index,
+                actor_index,
+                is_online: false,
+            });
+        }
+        // Only actor 9 attacks; 10 deals no damage, takes none and has no SBA gauge.
+        parser.on_damage_event(hit((9, 0x4C714F77), (2, 0x12345678), 100));
+        assert!(parser.derived_state.party.contains_key(&10));
+        assert_eq!(parser.derived_state.party[&10].total_damage, 0);
+
+        // Saved logs too.
+        parser.reparse();
+        assert!(parser.derived_state.party.contains_key(&10));
+        assert_eq!(parser.derived_state.party.len(), 2);
+    }
+
+    #[test]
+    fn members_back_under_new_indices_keep_their_rows() {
+        let mut parser = Parser::default();
+        let identity = |actor_index| PlayerIdentityEvent {
+            character_name: CString::new("Character").unwrap(),
+            display_name: CString::new("Player").unwrap(),
+            character_type: 0x4C714F77,
+            party_index: 0,
+            actor_index,
+            is_online: false,
+        };
+        parser.on_player_identity_event(identity(9));
+        parser.on_damage_event(hit((9, 0x4C714F77), (2, 0x12345678), 100));
+        // Next floor: the same member, recreated as actor 30.
+        parser.on_player_identity_event(identity(30));
+        parser.on_damage_event(hit((30, 0x4C714F77), (40, 0x12345678), 50));
+
+        assert_eq!(
+            parser.encounter.player_data[0]
+                .as_ref()
+                .unwrap()
+                .actor_index,
+            9
+        );
+        assert_eq!(parser.derived_state.party.len(), 1);
+        assert_eq!(parser.derived_state.party[&9].total_damage, 150);
+        // Saved logs hold the member's first index, so they read the same.
+        parser.reparse();
+        assert_eq!(parser.derived_state.party.len(), 1);
+    }
+
+    #[test]
     fn inactive_encounter_is_saved_once() {
         let mut parser = Parser::default();
         let event = DamageEvent {
@@ -1682,7 +1976,8 @@ mod tests {
         assert!(parser.on_battle_end_event());
         assert_eq!(parser.status, ParserStatus::Stopped);
         assert!(parser.encounter.raw_event_log.is_empty());
-        assert!(parser.encounter.player_data.iter().all(Option::is_none));
+        // The finished fight keeps its party: names stay on the meter.
+        assert!(parser.encounter.player_data[0].is_some());
         assert!(!parser.on_battle_end_event());
 
         // The next battle's identities may arrive before its first hit. The
@@ -1720,6 +2015,8 @@ mod tests {
         let next_player = parser.encounter.player_data[0].as_ref().unwrap();
         assert_eq!(next_player.actor_index, 7);
         assert_eq!(next_player.display_name, "Second Player");
+        // The new member took the slot of the old one.
+        assert_eq!(parser.encounter.player_data.iter().flatten().count(), 1);
     }
 
     #[test]

@@ -21,6 +21,21 @@ pub struct PlayerState {
 }
 
 impl PlayerState {
+    /// A member with nothing recorded yet.
+    pub fn new(index: u32, character_type: CharacterType) -> Self {
+        Self {
+            index,
+            character_type,
+            total_damage: 0,
+            last_known_pet_skill: None,
+            dps: 0.0,
+            skill_breakdown: Vec::new(),
+            sba: 0.0,
+            total_stun_value: 0.0,
+            stun_per_second: 0.0,
+        }
+    }
+
     pub fn set_sba(&mut self, sba: f64) {
         self.sba = sba;
     }

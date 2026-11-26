@@ -16,7 +16,7 @@
       "open-logs": "ログを開く",
       "toggle-overlay-meter": "ゲーム内メーターを表示",
       "toggle-overlay-enemy-hp": "敵HPを表示",
-      "toggle-overlay-damage-taken": "被ダメージを表示",
+      "toggle-overlay-damage-taken": "戦犯ランキングを表示",
       "toggle-overlay-combat-log": "戦闘ログを表示",
       "toggle-overlay-menu": "ゲーム内設定画面を表示",
       "reset-windows": "ウィンドウをリセット",
@@ -175,6 +175,12 @@
       "dot": "継続ダメージ"
     },
     "damage-taken": {
+      "board-title": "戦犯ランキング",
+      "missed-links": "リンク漏れ",
+      "missed-chains": "奥義チェイン漏れ",
+      "deaths": "瀕死",
+      "auto-revives": "オートリバイブ",
+      "downed-time": "瀕死時間",
       "empty": "被ダメージは記録されていません。このバージョンより前に保存したログには含まれません。",
       "total": "被ダメージ",
       "hits": "回数",
