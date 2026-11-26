@@ -21,7 +21,8 @@ type Props = {
 /** Each player's damage split by attack type: a stacked bar plus the share of every type. */
 export const AttackCompositionTable = ({ encounter, partyData, playerColors, showDisplayNames }: Props) => {
   const { t } = useTranslation();
-  const players = formatInPartyOrder(encounter.party);
+  // Most damage first, like the overview; colours still follow each member's party slot.
+  const players = formatInPartyOrder(encounter.party).sort((a, b) => b.totalDamage - a.totalDamage);
 
   return (
     <Table striped>
