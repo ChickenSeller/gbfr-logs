@@ -486,6 +486,10 @@ impl DerivedEncounterState {
     }
 }
 
+/// Member ids handed out when a member's actor index is another member's id (actor indices stay
+/// far below this).
+const FIRST_SPARE_MEMBER_ID: u32 = 0x1000;
+
 /// A zero row for each member of `players` that has none (Id's dragon form is Id's row). A zero
 /// row of someone no longer in the party (the previous battle's member, replaced in their slot)
 /// goes.
@@ -646,12 +650,15 @@ pub struct Parser {
     #[serde(skip)]
     live_gauges: HashMap<u32, f32>,
 
-    /// Actor indices that stand for a member already in the party under another index: the
-    /// game recreates the party's actors with new indices on every floor of a tower (and in each
-    /// new area), and the encounter goes on, so each floor added the same members again as new
-    /// rows (the old ones as [Guest]). New index -> the member's first index.
+    /// The member each actor index stands for right now. The game recreates the party's actors
+    /// on every tower floor and in each new area, with new indices, and hands old indices to
+    /// other members: counting by actor index added the same member again on each floor, and
+    /// mapping a new index to the member's old one merged two members once that old index
+    /// went to someone else (the player's damage counted as Siegfried's). So each member keeps
+    /// the id they were first seen with, unless another member already holds it; then they get
+    /// one of their own from `FIRST_SPARE_MEMBER_ID`. Actor index -> member id.
     #[serde(skip)]
-    aliases: HashMap<u32, u32>,
+    member_ids: HashMap<u32, u32>,
 }
 
 impl Parser {
@@ -1163,9 +1170,11 @@ impl Parser {
         }
     }
 
-    /// The index a member is counted under: when `actor_index` is new but its party slot holds
-    /// the same member (character, player name and character name) under another index, that
-    /// index, and `actor_index` becomes its alias.
+    /// The id the member behind `actor_index` is counted under, as their identity or loadout
+    /// arrives: the member in that party slot if it is the same one (character, player name
+    /// and character name), with the id they already have; otherwise a new member, with the
+    /// actor index as id unless another member holds it. From now on `actor_index` stands for
+    /// this member.
     fn member_index(
         &mut self,
         party_index: u8,
@@ -1174,24 +1183,43 @@ impl Parser {
         display_name: &str,
         character_name: &str,
     ) -> u32 {
-        let actor_index = self.canonical(actor_index);
-        let Some(Some(member)) = self.encounter.player_data.get(usize::from(party_index)) else {
-            return actor_index;
-        };
-        let same_member = member.actor_index != actor_index
-            && member.character_type == character_type
-            && member.display_name == display_name
-            && member.character_name == character_name;
-        if same_member {
-            self.aliases.insert(actor_index, member.actor_index);
-            return member.actor_index;
-        }
-        actor_index
+        let same_member = self
+            .encounter
+            .player_data
+            .get(usize::from(party_index))
+            .and_then(Option::as_ref)
+            .filter(|member| {
+                member.character_type == character_type
+                    && member.display_name == display_name
+                    && member.character_name == character_name
+            })
+            .map(|member| member.actor_index);
+        let id = same_member.unwrap_or_else(|| {
+            let held_by_another = |id: u32| {
+                self.member_ids
+                    .iter()
+                    .any(|(index, member)| *member == id && *index != actor_index)
+                    || self
+                        .encounter
+                        .player_data
+                        .iter()
+                        .flatten()
+                        .any(|member| member.actor_index == id)
+            };
+            if !held_by_another(actor_index) {
+                return actor_index;
+            }
+            (FIRST_SPARE_MEMBER_ID..)
+                .find(|id| !held_by_another(*id))
+                .expect("a free member id")
+        });
+        self.member_ids.insert(actor_index, id);
+        id
     }
 
-    /// The index `actor_index` is counted under.
+    /// The member id an actor index is counted under (itself until an identity names it).
     fn canonical(&self, actor_index: u32) -> u32 {
-        self.aliases
+        self.member_ids
             .get(&actor_index)
             .copied()
             .unwrap_or(actor_index)
@@ -1903,6 +1931,42 @@ mod tests {
         // Saved logs hold the member's first index, so they read the same.
         parser.reparse();
         assert_eq!(parser.derived_state.party.len(), 1);
+    }
+
+    #[test]
+    fn members_swapping_indices_stay_apart() {
+        let mut parser = Parser::default();
+        let identity = |party_index, actor_index, character_type, name: &str| PlayerIdentityEvent {
+            character_name: CString::new(name).unwrap(),
+            display_name: CString::new(if party_index == 0 { "Player" } else { "" }).unwrap(),
+            character_type,
+            party_index,
+            actor_index,
+            is_online: false,
+        };
+        const RACKAM: u32 = 0xF8D73D33;
+        const SIEGFRIED: u32 = 0x94E2514E;
+        // First area: Rackam is actor 1, Siegfried actor 0.
+        parser.on_player_identity_event(identity(0, 1, RACKAM, "Rackam"));
+        parser.on_player_identity_event(identity(1, 0, SIEGFRIED, "Siegfried"));
+        parser.on_damage_event(hit((1, RACKAM), (9, 0x12345678), 100));
+        parser.on_damage_event(hit((0, SIEGFRIED), (9, 0x12345678), 10));
+        // Next area: the indices are swapped.
+        parser.on_player_identity_event(identity(0, 0, RACKAM, "Rackam"));
+        parser.on_player_identity_event(identity(1, 1, SIEGFRIED, "Siegfried"));
+        parser.on_damage_event(hit((0, RACKAM), (9, 0x12345678), 100));
+        parser.on_damage_event(hit((1, SIEGFRIED), (9, 0x12345678), 10));
+
+        let slots: Vec<_> = parser.encounter.player_data.iter().flatten().collect();
+        assert_eq!(slots.len(), 2);
+        let rackam = slots[0].actor_index;
+        let siegfried = slots[1].actor_index;
+        assert_ne!(rackam, siegfried);
+        assert_eq!(parser.derived_state.party[&rackam].total_damage, 200);
+        assert_eq!(parser.derived_state.party[&siegfried].total_damage, 20);
+        parser.reparse();
+        assert_eq!(parser.derived_state.party[&rackam].total_damage, 200);
+        assert_eq!(parser.derived_state.party[&siegfried].total_damage, 20);
     }
 
     #[test]
